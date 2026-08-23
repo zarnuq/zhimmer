@@ -1,0 +1,43 @@
+# Ghost text: a greyed preview of the top candidate, drawn past the cursor with
+# POSTDISPLAY. This is the same technique zsh-autosuggestions uses, which is why
+# zhimmer replaces rather than coexists with it -- two plugins writing
+# POSTDISPLAY would fight.
+#
+# It is only shown while the menu is merely listed. Once Down enters menuselect,
+# zsh inserts the highlighted match into the buffer itself, and a ghost would be
+# showing the same text twice.
+
+_zhimmer_clear_ghost() {
+  POSTDISPLAY=
+  region_highlight=( ${region_highlight:#*memo=zhimmer*} )
+  _zhimmer_ghost_for=
+}
+
+# Catch-all: drop the ghost as soon as the buffer stops matching what the ghost
+# was computed against. Wrapping individual widgets does not scale -- backspace
+# and Tab were both missed that way, and Tab is not even ours (it runs zsh's own
+# completion, which rewrites the buffer with no idea zhimmer exists). A redraw
+# hook catches every such path, including ones not yet thought of, for the cost
+# of one string compare.
+_zhimmer_ghost_guard() {
+  [[ -n $POSTDISPLAY && $BUFFER != $_zhimmer_ghost_for ]] && _zhimmer_clear_ghost
+  return 0
+}
+
+_zhimmer_ghost() {
+  _zhimmer_clear_ghost
+
+  local on
+  zstyle -s ':zhimmer:*' ghost-text on || on=yes
+  [[ $on == (yes|true|1|on) ]] || return
+
+  # Only at end of line: a ghost in the middle of a line reads as real text.
+  [[ -z $RBUFFER ]] || return
+  [[ -n $_zhimmer_top && $_zhimmer_top == ${LBUFFER}?* ]] || return
+
+  POSTDISPLAY=${_zhimmer_top#$LBUFFER}
+  typeset -g _zhimmer_ghost_for=$BUFFER
+  local color
+  zstyle -s ':zhimmer:*' ghost-color color || color='fg=#6c7086'
+  region_highlight+=( "${#BUFFER} $(( ${#BUFFER} + ${#POSTDISPLAY} )) ${color},memo=zhimmer" )
+}
