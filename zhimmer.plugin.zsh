@@ -33,9 +33,10 @@ zle -C zhimmer-show list-choices .zhimmer-complete-list
 # never goes through.
 zle -C zhimmer-menu menu-select .zhimmer-complete-menu
 
-zle -N zhimmer-toggle .zhimmer-toggle
-zle -N zhimmer-down   .zhimmer-down
-zle -N self-insert    .zhimmer-self-insert
+zle -N zhimmer-toggle      .zhimmer-toggle
+zle -N zhimmer-down        .zhimmer-down
+zle -N zhimmer-magic-space .zhimmer-magic-space
+zle -N self-insert         .zhimmer-self-insert
 _zhimmer_wrap_refresh
 _zhimmer_wrap_accept
 
@@ -46,9 +47,13 @@ add-zle-hook-widget line-pre-redraw _zhimmer_ghost_guard
 _zhimmer_bindkeys() {
   local m
   for m in emacs viins; do
-    bindkey -M $m '^[[B' zhimmer-down    # Down
-    bindkey -M $m '^[[Z' zhimmer-toggle  # Shift+Tab
+    bindkey -M $m '^[[B' zhimmer-down         # Down
+    bindkey -M $m '^[[Z' zhimmer-toggle       # Shift+Tab
+    bindkey -M $m ' '    zhimmer-magic-space  # Space expands the alias in place
   done
+  # Enter expands a bare alias too. Done here, after zsh-vi-mode's init, so the
+  # chain wraps vi-mode's accept-line rather than being wiped by it.
+  _zhimmer_wrap_acceptline
   # Inside the menu: Tab accepts, Esc backs out restoring the original line.
   # Esc is deliberately NOT bound outside the menu -- it is zsh-vi-mode's
   # normal-mode switch, and it prefixes every arrow-key sequence.

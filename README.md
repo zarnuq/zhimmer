@@ -84,6 +84,7 @@ zstyle ':zhimmer:*' max-suggestions 10
 zstyle ':zhimmer:*' min-chars       2
 zstyle ':zhimmer:*' ghost-text      yes
 zstyle ':zhimmer:*' ghost-color     'fg=#6c7086'
+zstyle ':zhimmer:*' expand-alias    yes
 ```
 
 ### Appearance
@@ -114,6 +115,16 @@ the top and takes the earliest candidates with it; zhimmer clamps to
 Sources are tried in the order listed, each becoming its own labelled group.
 Adding one means dropping a `_zhimmer_source_<name>` function into `sources/`
 and naming it in the style.
+
+### Alias expansion
+
+With `expand-alias yes` (the default), an alias is rewritten in place to the
+command it stands for, so the real line fills the prompt instead of the
+shorthand — typing `gs ` leaves `git status -s ` in front of the cursor, ready
+to edit before it runs. It fires on `Space` and `Enter`. Command aliases expand
+only in command position (zsh's own rule); global aliases expand anywhere; and
+chains (`gcm` → `gc` → `git commit`) resolve one step at a time. Set the style
+to `no` to turn it off.
 
 ## Diagnostics
 
