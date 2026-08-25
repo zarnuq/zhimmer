@@ -68,7 +68,7 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 | `↓` | open the menu — falls through to history when there is nothing to show |
 | `↑` `↓` | move within the menu |
 | `→` | accept the ghost at end of line; moves the cursor anywhere else |
-| `Tab` | accept the highlighted row; outside the menu, zsh's normal completion |
+| `Tab` | accept the ghost, or the highlighted row inside the menu; with no ghost, zsh's normal completion |
 | `Enter` | run |
 | `Esc` | inside the menu, back out and restore the line |
 | `Shift+Tab` | toggle zhimmer on/off |
@@ -142,8 +142,15 @@ conflicting ghost-text plugin.
 **zsh-autosuggestions** — zhimmer draws ghost text from the same `POSTDISPLAY`
 mechanism, so running both means two plugins fighting over it.
 
-It does *not* replace zsh's completion system. `Tab` outside the menu still
-completes subcommands, flags and paths exactly as before.
+It does *not* replace zsh's completion system. With no ghost showing, `Tab`
+still completes subcommands, flags and paths exactly as before.
+
+`Tab` does take the ghost when there is one. The ghost lives in `POSTDISPLAY`,
+not in `BUFFER`, so leaving that case to zsh's completion left a whole command
+line drawn on screen while `Enter` ran only the part that was typed —
+`git clone https://…` shown, `git clone htt` executed. Ghost text is also
+dropped at `line-finish`, so an accepted line never keeps a tail it did not
+run.
 
 ## Tests
 

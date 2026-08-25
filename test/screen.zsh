@@ -33,8 +33,10 @@ git status --short --branch
 HIST
 
 # A real file, so Tab has something to complete whose history entry extends
-# past it -- the combination the Tab bug needed.
+# past it -- the combination the Tab bug needed. The second one appears in no
+# history entry, so Tab there has no ghost to take and must complete instead.
 : > $fh/zhimmer-target-file.txt
+: > $fh/zhimmer-plain-file.txt
 
 mkdir -p $fh/.config/zsh
 cat > $fh/.config/zsh/.zshrc <<RC
@@ -95,15 +97,36 @@ send Down
 check "Down again moves to the second row" 'sudo openvpn ~/VPNs/universal.ovpn'
 stop
 
-# Tab runs zsh's own completion, which rewrites the buffer knowing nothing about
-# zhimmer. The ghost was computed for the shorter text and must be dropped, or
-# the line reads "...target-file.txtget-file.txt --verbose".
+# Tab takes the ghost into the buffer. The ghost lives in POSTDISPLAY, so what
+# is on screen is not what runs: before this, Tab left the suggestion drawn and
+# Enter executed only the typed prefix -- "git clone https://..." shown,
+# "git clone htt" run.
 start
 send "cat zhimmer-tar"
 check  "ghost shows the history tail before Tab" 'cat zhimmer-target-file.txt --verbose'
 send Tab
-refute "Tab drops the now-stale ghost" '--verbose'
-check  "Tab still completed the filename" 'cat zhimmer-target-file.txt'
+check  "Tab accepts the ghost" 'cat zhimmer-target-file.txt --verbose'
+# Typing clears the ghost, so a tail that survives a keystroke is really in the
+# buffer -- the difference the bug turned on.
+send " x"
+check  "the accepted text is in the buffer, not just on screen" 'cat zhimmer-target-file.txt --verbose x'
+stop
+
+# Tab with no ghost must still be zsh's completion.
+start
+send "cat zhimmer-pl"
+refute "no history entry, so no ghost" 'zhimmer-plain-file.txt'
+send Tab
+check  "Tab still completes a filename when there is no ghost" 'cat zhimmer-plain-file.txt'
+stop
+
+# Whatever is left showing when the line is accepted has to be what runs. The
+# ghost is display-only, so it must be gone by then rather than printed as part
+# of the command that ran.
+start
+send "cat zhimmer-tar"
+send Enter
+refute "an accepted line does not keep the ghost it did not run" '--verbose'
 stop
 
 # Layout. A row wider than the terminal wraps onto a second line and pulls the

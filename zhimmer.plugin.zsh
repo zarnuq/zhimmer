@@ -35,6 +35,7 @@ zle -C zhimmer-menu menu-select .zhimmer-complete-menu
 
 zle -N zhimmer-toggle      .zhimmer-toggle
 zle -N zhimmer-down        .zhimmer-down
+zle -N zhimmer-tab         .zhimmer-tab
 zle -N zhimmer-magic-space .zhimmer-magic-space
 zle -N self-insert         .zhimmer-self-insert
 _zhimmer_wrap_refresh
@@ -43,6 +44,9 @@ _zhimmer_wrap_accept
 autoload -Uz add-zle-hook-widget
 zle -N _zhimmer_ghost_guard
 add-zle-hook-widget line-pre-redraw _zhimmer_ghost_guard
+# Ghost text is not part of BUFFER, so it must not survive onto an accepted line.
+zle -N _zhimmer_ghost_finish
+add-zle-hook-widget line-finish _zhimmer_ghost_finish
 
 _zhimmer_bindkeys() {
   local m
@@ -50,6 +54,9 @@ _zhimmer_bindkeys() {
     bindkey -M $m '^[[B' zhimmer-down         # Down
     bindkey -M $m '^[[Z' zhimmer-toggle       # Shift+Tab
     bindkey -M $m ' '    zhimmer-magic-space  # Space expands the alias in place
+    # Tab accepts the ghost, or falls through to the completion it replaced.
+    _zhimmer_save_tab $m
+    bindkey -M $m '^I'   zhimmer-tab
   done
   # Enter expands a bare alias too. Done here, after zsh-vi-mode's init, so the
   # chain wraps vi-mode's accept-line rather than being wiped by it.

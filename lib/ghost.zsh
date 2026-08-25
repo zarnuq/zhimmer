@@ -41,3 +41,26 @@ _zhimmer_ghost() {
   zstyle -s ':zhimmer:*' ghost-color color || color='fg=#6c7086'
   region_highlight+=( "${#BUFFER} $(( ${#BUFFER} + ${#POSTDISPLAY} )) ${color},memo=zhimmer" )
 }
+
+# Take the ghost into the buffer. Shared by Right and Tab: both mean "accept
+# what is on screen", and after either the display must promise nothing the
+# buffer does not hold. Returns non-zero when there is no ghost to accept, so
+# callers can fall through to what the key normally does.
+_zhimmer_accept_ghost() {
+  [[ -n $POSTDISPLAY && -z $RBUFFER ]] || return 1
+  BUFFER=$BUFFER$POSTDISPLAY
+  CURSOR=${#BUFFER}
+  _zhimmer_clear_ghost
+  _zhimmer_maybe_show
+  return 0
+}
+
+# The ghost is display-only -- it lives in POSTDISPLAY, not in BUFFER -- so a
+# line accepted while one is showing runs less than it appears to run: the
+# screen keeps the whole suggestion, the shell gets the typed prefix. Clearing
+# at line-finish covers every way out of the editor, not just the accept-line
+# that gets wrapped.
+_zhimmer_ghost_finish() {
+  _zhimmer_clear_ghost
+  return 0
+}

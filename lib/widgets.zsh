@@ -84,15 +84,38 @@ _zhimmer_wrap_accept() {
   for w in $ZHIMMER_ACCEPT_WIDGETS; do
     [[ ${widgets[$w]} == builtin ]] || continue
     functions[.zhimmer-accept-$w]="
-      if [[ -n \$POSTDISPLAY && -z \$RBUFFER ]]; then
-        BUFFER=\$BUFFER\$POSTDISPLAY
-        CURSOR=\${#BUFFER}
-        _zhimmer_clear_ghost
-        _zhimmer_maybe_show
-      else
-        zle .$w
-      fi
+      _zhimmer_accept_ghost || zle .$w
     "
     zle -N $w .zhimmer-accept-$w
   done
+}
+
+# Tab. With a ghost showing it takes the ghost: the suggestion is drawn past the
+# cursor but is not in the buffer, so leaving Tab to zsh's completion meant the
+# screen showed a whole command line while Enter ran only the typed prefix --
+# `git clone https://…` on screen, `git clone htt` executed. Tab now either
+# makes the suggestion real or leaves the line alone.
+#
+# Without a ghost it falls through to whatever Tab did before zhimmer loaded, so
+# ordinary completion of subcommands, flags and paths is untouched.
+typeset -gA _zhimmer_tab_fallback=()
+
+# Remember the binding a keymap had for Tab, before it is rebound to ours.
+_zhimmer_save_tab() {
+  local keymap=$1
+  local -a b=( ${(z)"$(bindkey -M $keymap '^I' 2>/dev/null)"} )
+  local w=${b[2]}
+  [[ -n $w && $w != (zhimmer-tab|undefined-key) ]] && _zhimmer_tab_fallback[$keymap]=$w
+  return 0
+}
+
+.zhimmer-tab() {
+  (( _zhimmer_enabled )) && _zhimmer_accept_ghost && return
+  _zhimmer_clear_ghost
+  # $KEYMAP is usually the link name (`main`), not the keymap we bound, so fall
+  # back through both of those to zsh's default.
+  local fb=${_zhimmer_tab_fallback[$KEYMAP]}
+  [[ -n $fb ]] || fb=${_zhimmer_tab_fallback[emacs]:-${_zhimmer_tab_fallback[viins]:-expand-or-complete}}
+  (( ${+widgets[$fb]} )) || fb=expand-or-complete
+  zle $fb
 }
