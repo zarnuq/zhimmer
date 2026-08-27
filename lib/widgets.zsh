@@ -218,3 +218,40 @@ _zhimmer_bind_eol() {
   done
   return 0
 }
+
+# Inside the menu: Enter takes the highlighted row, Esc backs out, and Tab and
+# the arrows walk the list. Tab moves rather than accepts, because the row the
+# cursor is on is not chosen until Enter -- stepping through a list and picking
+# from it are two gestures, and only one of them should end the menu.
+#
+# Typing narrows the list instead of ending it (type-to-filter, switched on in
+# complete.zsh and tabstyle.zsh). complist calls that interactive mode, and it
+# drops out of it the moment a key moves the selection -- which would quietly
+# turn the next character typed back into "accept this row, then insert it",
+# the behaviour the mode exists to avoid. So every movement key is a two-key
+# macro: move, then vi-insert, which is complist's own toggle back into
+# interactive mode. The primitives it is built from are bound under a prefix
+# nobody presses, since pressing one of them on its own would leave the mode.
+_zhimmer_bind_menuselect() {
+  bindkey -M menuselect '^[' send-break
+  # Backspace has to be named here, though the main keymap already has it:
+  # complist reads it as "take a character back off what I am filtering on"
+  # only while the key is bound to the builtin, and zhimmer rebinds it to
+  # refresh the ghost. That made backspace leave the menu instead, accepting
+  # whichever row it was on as it went.
+  bindkey -M menuselect '^?' backward-delete-char
+  bindkey -M menuselect '^H' backward-delete-char
+
+  if ! _zhimmer_bool type-to-filter; then
+    bindkey -M menuselect '^I' accept-line   # Tab accepts; nothing filters
+    return 0
+  fi
+
+  bindkey -M menuselect '^X^N' down-line-or-history
+  bindkey -M menuselect '^X^P' up-line-or-history
+  bindkey -M menuselect '^X^F' vi-insert
+  local k
+  for k in '^[[B' '^[OB' '^I'   '^N'; do bindkey -M menuselect -s $k '^X^N^X^F'; done
+  for k in '^[[A' '^[OA' '^[[Z' '^P'; do bindkey -M menuselect -s $k '^X^P^X^F'; done
+  return 0
+}

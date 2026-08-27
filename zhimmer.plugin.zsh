@@ -30,6 +30,7 @@ typeset -gA ZHIMMER_DEFAULTS=(
   ghost-color       'fg=#6c7086'
   expand-alias      yes
   tame-lists        yes
+  type-to-filter    yes
   style-completion  yes
   toggle-key        '^@'
 )
@@ -87,11 +88,9 @@ _zhimmer_bindkeys() {
   # Enter expands a bare alias too. Done here, after zsh-vi-mode's init, so the
   # chain wraps vi-mode's accept-line rather than being wiped by it.
   _zhimmer_wrap_acceptline
-  # Inside the menu: Tab accepts, Esc backs out restoring the original line.
-  # Esc is deliberately NOT bound outside the menu -- it is zsh-vi-mode's
-  # normal-mode switch, and it prefixes every arrow-key sequence.
-  bindkey -M menuselect '^I' accept-line
-  bindkey -M menuselect '^[' send-break
+  # Inside the menu. Esc is bound there and deliberately nowhere else -- it is
+  # zsh-vi-mode's normal-mode switch, and it prefixes every arrow-key sequence.
+  _zhimmer_bind_menuselect
 }
 
 # zsh-vi-mode wipes all keybindings during its own init, so registering ours

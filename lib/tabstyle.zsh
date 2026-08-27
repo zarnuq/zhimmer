@@ -85,23 +85,30 @@ _zhimmer_unstyle_matches() {
   return 0
 }
 
-# Long completion listings. Two separate things go wrong once a list outgrows
-# the screen. Past LISTMAX zsh replaces it with a question -- "do you wish to
-# see all 149 possibilities?" -- so the same key that draws a list here draws a
-# yes/no prompt there. LISTMAX=0 asks only when the list would scroll off the
-# top, and a list-prompt makes that case scroll rather than ask.
+# Long completion listings, and what a listing is for. Two separate things go
+# wrong once a list outgrows the screen. Past LISTMAX zsh replaces it with a
+# question -- "do you wish to see all 149 possibilities?" -- so the same key
+# that draws a list here draws a yes/no prompt there. LISTMAX=0 asks only when
+# the list would scroll off the top, and a list-prompt makes that case scroll
+# rather than ask.
 #
 # But that scroll is a pager: it pages past the matches, one keypress at a
 # time, with nothing selected and nothing to accept -- the wrong gesture for
 # `ls /etc/<Tab>`, where the point is to pick one of the 150 names rather than
-# read past them. `menu select=long` hands exactly that case to menu selection
-# instead, so the arrows walk the list, it scrolls under them, and Tab takes
-# the row the cursor is on -- the same menu Down opens, reached from Tab.
+# read past them. `menu select` hands the matches to menu selection instead, so
+# the arrows walk the list, it scrolls under them, and the row the cursor is on
+# is marked -- the same menu Down opens, reached from Tab.
 #
-# Short lists are untouched: they fit, so menu selection never starts and Tab
-# still steps through the matches the way it always has. The list-prompt stays
-# for the widgets that only ever list (^D), where there is nothing to select
-# into.
+# Plain `select`, not `select=long`: a short list fits on screen, but fitting is
+# not the same as having nothing to choose from. With selection only on the long
+# ones, Tab stepped through a short list by inserting each match with nothing on
+# screen saying which row that was. The list-prompt stays for the widgets that
+# only ever list (^D), where there is nothing to select into.
+#
+# `interactive` is the answer to the other half of it: without it, the first
+# character typed at an open menu accepts whatever row the cursor happens to be
+# on and types after it -- `ls /etc/<Tab>a` gave `/etc/acpi/a`. With it, typing
+# narrows the list and nothing is chosen until Enter.
 #
 # A style the user has already set always wins, so the whole zstyle table is
 # read once and asked what it defines. `zstyle -L <context> <style>` would
@@ -111,8 +118,6 @@ _zhimmer_tame_lists() {
   _zhimmer_bool tame-lists || return
   LISTMAX=0
 
-  # A style the user has already set always wins, so the table is read once and
-  # asked what it defines.
   local -A defined; local l; local -a w
   for l in ${(f)"$(zstyle -L)"}; do
     w=( ${(z)l} )
@@ -120,28 +125,40 @@ _zhimmer_tame_lists() {
     [[ $w[2] == *completion* ]] && defined[$w[3]]=1
   done
 
+  # Each entry is a style and its values written as a command line, because they
+  # are not all one value each: menu takes two and they have to stay separate
+  # words -- _main_complete matches its array element by element, so
+  # 'select interactive' as a single value is neither of them -- while
+  # list-prompt is one value with spaces inside it. (z) splits the line the way
+  # the shell would, and (Q) takes the quoting back off.
+  #
+  # Which means every value interpolated in has to be quoted with (q) on the
+  # way, spaces or not: the colour is 'ma=48;2;69;71;90;1', and a bare ; is
+  # where the shell would end a command, so unquoted it split into six values
+  # and the selected row lost its colour.
+  local filter=; _zhimmer_bool type-to-filter && filter=' interactive'
   local -a want=(
     # Group the matches by tag, so the headers zhimmer draws over them read
     # "files", "options", "branches" rather than zsh's internal -default-.
-    group-name  ''
-    list-prompt "$ZHIMMER_LIST_PROMPT"
-    menu        'select=long'
+    "group-name ''"
+    "list-prompt ${(q)ZHIMMER_LIST_PROMPT}"
+    "menu select$filter"
     # The selected row. Inside the completion system ZLS_COLORS is rebuilt from
     # the list-colors style for the duration of the completion, so the ma= set
     # in theme.zsh -- which is what zhimmer's own menu selects with -- never
     # reaches Tab's, and the row falls back to reverse video. Same colour, said
     # again in the place compsys reads.
-    list-colors "ma=${ZHIMMER_SELECT}"
+    "list-colors ma=${(q)ZHIMMER_SELECT}"
   )
 
   # What zhimmer actually set, for zhimmer-doctor to report: the useful question
   # is which of these the user's own config had already answered.
   typeset -ga ZHIMMER_TAMED=()
-  local st val
-  while (( $#want )); do
-    st=$want[1] val=$want[2]; shift 2 want
-    (( ${+defined[$st]} )) && continue
-    zstyle ':completion:*' $st "$val"
-    ZHIMMER_TAMED+=( $st )
+  local -a args; local entry
+  for entry in $want; do
+    args=( "${(@Q)${(z)entry}}" )
+    (( ${+defined[$args[1]]} )) && continue
+    zstyle ':completion:*' "${(@)args}"
+    ZHIMMER_TAMED+=( $args[1] )
   done
 }

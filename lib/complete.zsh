@@ -75,6 +75,17 @@ typeset -g _zhimmer_drew=0
 
 .zhimmer-complete-menu() {
   compstate[insert]='menu'
+  # Typing inside the menu narrows it rather than accepting the highlighted row
+  # (type-to-filter; the keys that keep it that way are in widgets.zsh). Tab's
+  # menu is told the same thing through the `menu` style, which a raw zle -C
+  # widget never goes through, so here it is set on the parameter compsys would
+  # have set. Unset rather than left alone when off: that same style path is
+  # what wrote the global last.
+  if _zhimmer_bool type-to-filter; then
+    MENUMODE=interactive
+  else
+    unset MENUMODE
+  fi
   .zhimmer-complete menu
 }
 

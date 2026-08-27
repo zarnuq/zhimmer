@@ -67,13 +67,18 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 |---|---|
 | `↓` | open the menu — falls through to history when there is nothing to show |
 | `↑` `↓` | move within the menu |
+| `Tab` `Shift+Tab` | inside the menu, move down and up it; outside, zsh's normal completion |
+| *typing* | inside the menu, narrow it to what still matches |
+| `Enter` | inside the menu, take the highlighted row; outside, run the line |
+| `Esc` | inside the menu, back out of it |
 | `→` `Ctrl+F` | accept the ghost at end of line; move the cursor anywhere else |
 | `Ctrl+E` `End` | accept the ghost; plain end-of-line when there is none |
-| `Tab` | accept the highlighted row inside the menu; outside it, zsh's normal completion |
-| `Enter` | run |
-| `Esc` | inside the menu, back out and restore the line |
-| `Shift+Tab` | step back up through Tab's matches |
 | `Ctrl+Space` | toggle zhimmer on/off (`toggle-key`) |
+
+Nothing is chosen until `Enter`: the menu marks the row it is on rather than
+writing it into the line, so `Tab`, the arrows and typing all leave what you
+typed alone until you take a row. Set `type-to-filter` to `no` for the older
+arrangement, where the menu inserts as it moves and `Tab` accepts.
 
 `Esc` is deliberately not bound outside the menu: it is zsh-vi-mode's
 normal-mode switch and it prefixes every arrow-key escape sequence.
@@ -112,7 +117,10 @@ underneath rows describing the previous word.
 
 `Shift+Tab` steps back up through those matches, so Tab and Shift+Tab move in
 opposite directions through the same list, and does nothing when there is no
-completion standing. Which of those it is gets decided from the line the last
+completion standing. Inside the menu that is the menu's own keymap; outside it
+— where menu selection never started, which is what a `menu` style of your own
+gets, since zhimmer leaves one that is already set alone — it is a widget, and
+whether there is anything to step back into gets decided from the line the last
 completion left behind, not from `LASTWIDGET`: with fzf's completion loaded Tab
 is `fzf-completion`, and zhimmer's wrapper runs underneath it.
 
@@ -131,18 +139,45 @@ all 149 possibilities?"* — a yes/no question where every other Tab gives a lis
 
 A scroll is still only a pager, though: `ls /etc/<Tab>` gives 150 names to page
 past, one keypress at a time, with nothing selected and nothing to accept. So
-the same setting also sets `menu select=long`, which hands exactly that case —
-the list that does not fit — to menu selection instead. The arrows walk it, it
-scrolls under them, `Tab` takes the row the cursor is on and `Esc` backs out:
-the menu `↓` opens, reached from `Tab`, with the line being edited still above
-it rather than pushed off the top. The count and position underneath come from
-the same `MENUPROMPT`, which the completion system replaces only when a
-`select-prompt` style is set.
+the same setting also sets `menu select`, which hands the matches to menu
+selection instead. The arrows and `Tab` walk it, it scrolls under them, `Enter`
+takes the row the cursor is on and `Esc` backs out: the menu `↓` opens, reached
+from `Tab`, with the line being edited still above it rather than pushed off the
+top. The count and position underneath come from the same `MENUPROMPT`, which
+the completion system replaces only when a `select-prompt` style is set.
 
-A list that fits is left alone — menu selection never starts, and `Tab` and
-`Shift+Tab` still step through those matches one at a time. The `list-prompt`
-stays for the widgets that only ever list, like `Ctrl+D`, where there is
-nothing to select into.
+Plain `select`, not `select=long`. A short list fits on screen, but fitting is
+not the same as having nothing to choose from: with selection only on the long
+ones, `Tab` stepped through a short list by inserting each match with nothing on
+screen saying which row that was. The `list-prompt` stays for the widgets that
+only ever list, like `Ctrl+D`, where there is nothing to select into.
+
+### Typing at an open menu
+
+`type-to-filter` (on by default) is the other half of that. Without it the first
+character typed at an open menu accepts whichever row the cursor happens to be
+on and types after it — `ls /etc/<Tab>a` left `ls /etc/acpi/a`, a directory
+nobody asked for. With it, typing narrows the list to what still matches,
+backspace widens it again, and the row is taken only by `Enter`.
+
+zsh calls this menu selection's *interactive mode*, and it is switched on in
+two places, because zhimmer has two menus: through the `menu` style for Tab's,
+and on `MENUMODE` for `↓`'s, which is a raw `zle -C` widget and so never goes
+through the completion system.
+
+complist drops out of interactive mode the moment a key moves the selection,
+which would quietly turn the next character typed back into *accept this row,
+then insert it*. So inside the menu every movement key is bound to a two-key
+macro — move, then `vi-insert`, which is complist's own toggle back into the
+mode. Backspace is bound there too: complist reads it as *take a character back
+off what I am filtering on* only while the key is bound to the builtin, and
+zhimmer rebinds it to refresh the ghost, which made backspace leave the menu
+instead, accepting a row on the way out.
+
+Set `type-to-filter` to `no` to get the plain menu back: the selection is
+inserted as it moves, `Tab` accepts, and typing ends the menu.
+
+### Colours and what is left alone
 
 `list-colors` gets `ma=` from the same `ZHIMMER_SELECT` as zhimmer's own menu.
 Inside the completion system `ZLS_COLORS` is rebuilt from that style for the
@@ -164,6 +199,7 @@ zstyle ':zhimmer:*' ghost-text      yes
 zstyle ':zhimmer:*' ghost-color     'fg=#6c7086'
 zstyle ':zhimmer:*' expand-alias    yes
 zstyle ':zhimmer:*' tame-lists      yes
+zstyle ':zhimmer:*' type-to-filter  yes
 zstyle ':zhimmer:*' style-completion yes
 zstyle ':zhimmer:*' toggle-key      '^@'
 ```

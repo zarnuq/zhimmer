@@ -64,6 +64,14 @@ stop() { tmux kill-session -t $s 2>/dev/null }
 
 line1()  { tmux capture-pane -p -t $s | rg -v '^\s*$' | head -1 }
 screen() { tmux capture-pane -p -t $s | rg -v '^\s*$' }
+# The row the menu is on, read back from the colour complist paints it in (ma=
+# in lib/theme.zsh). The menu no longer writes the row it is passing over into
+# the line, so the highlight is the only thing on screen that says where the
+# cursor is.
+selected() {
+  tmux capture-pane -p -e -t $s | rg -F '48;2;69;71;90' |
+    sed -e $'s/\e\\[[0-9;]*m//g' -e 's/^ *//' -e 's/ *$//'
+}
 send()  { tmux send-keys -t $s "$@"; sleep 1.2 }
 
 # One assertion body, told what to look at and whether the substring should be
@@ -92,6 +100,7 @@ _assert() {  # _assert <capture-fn> <want|not> <label> <substring>
 # which is where the drop-down is.
 check()   { _assert line1  want "$@" }
 refute()  { _assert line1  not  "$@" }
+checksel(){ _assert selected want "$@" }
 checks()  { _assert screen want "$@" }
 refutes() { _assert screen not  "$@" }
 
@@ -104,11 +113,14 @@ check "ghost completes the top candidate" 'sudo openvpn ~/VPNs/no'
 # keymap, so this covers the vi-backward-delete-char case.
 send BSpace BSpace BSpace
 check "ghost refreshes on backspace, no stale tail" 'sudo openvpn ~/VPNs/no'
-# menuselect inserts the match into the buffer; a leftover ghost repeats its tail.
+# The menu does not write rows into the line as it walks them (type-to-filter),
+# so the line still holds what was typed -- and a ghost left over from typing
+# would sit past it, repeating the tail of a row the menu is already showing.
 send Down
-check "Down does not duplicate the suggestion" 'sudo openvpn ~/VPNs/no'
+refute   "Down does not leave the ghost standing behind the menu" 'VPNs'
+checksel "Down opens the menu on its first row" 'sudo openvpn ~/VPNs/no'
 send Down
-check "Down again moves to the second row" 'sudo openvpn ~/VPNs/universal.ovpn'
+checksel "Down again moves to the second row" 'sudo openvpn ~/VPNs/universal.ovpn'
 stop
 
 # Ctrl+E (and End) take the ghost, the way zsh-autosuggestions binds them.
@@ -188,17 +200,20 @@ stop
 # Past LISTMAX zsh replaces a listing with "do you wish to see all N
 # possibilities?" -- a yes/no question where every other Tab gives a list. A
 # list-prompt answers that, but only with a pager: 150 names to page past, none
-# of them selected. A long list goes to menu selection instead, so the arrows
-# walk it and Tab takes the row -- the menu Down opens, reached from Tab.
+# of them selected. The matches go to menu selection instead, so the arrows and
+# Tab walk it and Enter takes the row -- the menu Down opens, reached from Tab.
 start
 send "ls ./zmany/"
 send Tab
 refutes "a long listing does not turn into a yes/no question" 'do you wish to see'
 refutes "nor into a pager with nothing to select" 'Tab for more'
-checks  "it is a menu, with the count and position under it" 'matches -- at'
-check   "whose first row is selected into the line" 'ls ./zmany/f1'
+checks   "it is a menu, with the count and position under it" 'matches -- at'
+checksel "whose first row is the one the cursor is on" 'f1'
+refute   "with nothing written into the line until it is accepted" 'f1'
 send Down Down
-check   "and the arrows walk it, one match at a time" 'ls ./zmany/f100'
+checksel "and the arrows walk it, one match at a time" 'f100'
+send Enter
+check    "Enter is what takes the row" 'ls ./zmany/f100'
 stop
 
 # The prompt has to survive it. The pager filled the screen from the top down,
@@ -207,23 +222,52 @@ stop
 start
 send "ls ./zmany/"
 send Tab
-checks  "the line being edited is still on screen under a long menu" '% ls ./zmany/f1'
+checks  "the line being edited is still on screen under a long menu" '% ls ./zmany/'
 stop
 
-# Short lists are not menus: they fit, so Tab still steps through the matches
-# and Shift+Tab still steps back (covered below), rather than opening something
-# to select in.
+# Typing at an open menu narrows it. Without that the first character accepts
+# whichever row the cursor happens to be on and types after it: `ls /etc/<Tab>a`
+# left `ls /etc/acpi/a`, a directory nobody asked for.
+start
+send "ls ./zmany/"
+send Tab
+send "f149"
+check   "typing narrows the menu instead of accepting the row it is on" 'ls ./zmany/f149'
+checks  "leaving the list showing what still matches" 'f149'
+refutes "and not what no longer does" ' f100 '
+# Backspace is bound inside the menu as well as outside it: zhimmer rebinds the
+# widget to refresh the ghost, which stopped complist recognising the key and
+# made it leave the menu, accepting a row on the way out.
+send BSpace
+check   "backspace widens the list again rather than leaving the menu" 'ls ./zmany/f14'
+stop
+
+# A short list fits on screen, which is not the same as having nothing to choose
+# from: it gets selection too, so the row Tab is on is marked rather than
+# guessed at from the line.
 start
 send "ls ./zb"
 send Tab
-refutes "a list that fits does not start menu selection" 'matches -- at'
+checksel "a list that fits is selectable too" 'zbeta1.txt'
+send Tab
+checksel "Tab walks it rather than accepting the first row" 'zbeta2.txt'
+send BTab
+checksel "and Shift+Tab walks back up it" 'zbeta1.txt'
+send Enter
+check    "Enter takes the row" 'ls ./zbeta1.txt'
 stop
 
-# Shift+Tab steps back up through the matches Tab is stepping down through.
+# Shift+Tab steps back up through the matches Tab is stepping down through,
+# where menu selection never starts and stepping is all there is -- which is
+# what a user who sets their own `menu` style gets, since zhimmer leaves a style
+# that is already set alone.
 # It cannot decide that from LASTWIDGET -- with fzf's completion loaded Tab is
 # `fzf-completion`, with zhimmer's wrapper running underneath it -- so it goes
 # by the line the last completion left behind.
 start
+send "zstyle ':completion:*' menu yes"
+send Enter
+send C-l          # the command has to go: line1 reads the top of the screen
 send "ls ./zb"
 send Tab
 send Tab
