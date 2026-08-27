@@ -13,13 +13,45 @@ typeset -gA ZHIMMER_COLORS=(
   file       '#fab387'
   git-branch '#a6e3a1'
   zoxide     '#f9e2af'
+  # Tab's own groups, named by completion tag once group-name is set.
+  files      '#fab387'
+  directories '#fab387'
+  options    '#89b4fa'
+  commands   '#89b4fa'
+  branches   '#a6e3a1'
+  parameters '#cba6f7'
 )
+# Tab's groups are named by completion tag; a few of those are zsh's internals
+# rather than words, and read better spelled out.
+typeset -gA ZHIMMER_GROUP_LABELS=(
+  globbed-files    files
+  all-files        files
+  other-files      files
+  common-commands  commands
+  all-commands     commands
+  original-array   parameters
+)
+
 typeset -g ZHIMMER_RULE_COLOR='#313244'
 
 # ma= is the selected match. Set on ZLS_COLORS rather than the list-colors style
 # because a raw zle -C widget never goes through the completion system.
 : ${ZHIMMER_SELECT:='48;2;69;71;90;1'}
 typeset -g ZLS_COLORS="ma=${ZHIMMER_SELECT}"
+
+# Menu selection scrolls once the list outgrows the screen -- but only if it has
+# a prompt to show at the bottom. Without MENUPROMPT the top of an over-long
+# menu, and the shell prompt above it, simply scroll away. Set on the parameters
+# rather than the select-prompt and select-scroll styles for the same reason as
+# ZLS_COLORS: a raw zle -C widget never goes through the completion system.
+#
+# Tab's own long lists say the same thing in the same words, through the
+# list-prompt style (see _zhimmer_tame_lists), so the wording is written here
+# once rather than kept in step in two files.
+typeset -g ZHIMMER_MATCH_PROMPT='%M matches -- at %p'
+: ${MENUPROMPT="%S${ZHIMMER_MATCH_PROMPT}%s"}
+: ${MENUSCROLL=1}
+: ${ZHIMMER_LIST_PROMPT="%S${ZHIMMER_MATCH_PROMPT}, Tab for more%s"}
 
 # " history ───────────────────" -- the rule gives the list a top edge to sit
 # under, which is what separates groups visually without drawing a real box.

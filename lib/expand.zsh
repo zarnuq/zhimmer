@@ -11,8 +11,7 @@
 
 _zhimmer_expand_alias() {
   emulate -L zsh
-  local mode; zstyle -s ':zhimmer:*' expand-alias mode || mode=yes
-  [[ $mode == (yes|true|1|on) ]] || return 1
+  _zhimmer_bool expand-alias || return 1
 
   local word=${LBUFFER##*[[:space:]]}
   [[ -n $word ]] || return 1

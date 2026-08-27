@@ -15,10 +15,10 @@ _zhimmer_clear_ghost() {
 
 # Catch-all: drop the ghost as soon as the buffer stops matching what the ghost
 # was computed against. Wrapping individual widgets does not scale -- backspace
-# and Tab were both missed that way, and Tab is not even ours (it runs zsh's own
-# completion, which rewrites the buffer with no idea zhimmer exists). A redraw
-# hook catches every such path, including ones not yet thought of, for the cost
-# of one string compare.
+# and Tab were both missed that way -- and Tab runs zsh's own completion, which
+# rewrites the buffer with no idea zhimmer exists. A redraw hook catches every
+# such path, including ones not yet thought of, for the cost of one string
+# compare.
 _zhimmer_ghost_guard() {
   [[ -n $POSTDISPLAY && $BUFFER != $_zhimmer_ghost_for ]] && _zhimmer_clear_ghost
   return 0
@@ -27,9 +27,7 @@ _zhimmer_ghost_guard() {
 _zhimmer_ghost() {
   _zhimmer_clear_ghost
 
-  local on
-  zstyle -s ':zhimmer:*' ghost-text on || on=yes
-  [[ $on == (yes|true|1|on) ]] || return
+  _zhimmer_bool ghost-text || return
 
   # Only at end of line: a ghost in the middle of a line reads as real text.
   [[ -z $RBUFFER ]] || return
@@ -37,15 +35,15 @@ _zhimmer_ghost() {
 
   POSTDISPLAY=${_zhimmer_top#$LBUFFER}
   typeset -g _zhimmer_ghost_for=$BUFFER
-  local color
-  zstyle -s ':zhimmer:*' ghost-color color || color='fg=#6c7086'
-  region_highlight+=( "${#BUFFER} $(( ${#BUFFER} + ${#POSTDISPLAY} )) ${color},memo=zhimmer" )
+  local REPLY; _zhimmer_cfg ghost-color
+  region_highlight+=( "${#BUFFER} $(( ${#BUFFER} + ${#POSTDISPLAY} )) ${REPLY},memo=zhimmer" )
 }
 
-# Take the ghost into the buffer. Shared by Right and Tab: both mean "accept
-# what is on screen", and after either the display must promise nothing the
-# buffer does not hold. Returns non-zero when there is no ghost to accept, so
-# callers can fall through to what the key normally does.
+# Take the ghost into the buffer. Shared by the accept keys -- Right, Ctrl+F,
+# Ctrl+E, End -- which all mean "accept what is on screen", after which the
+# display must promise nothing the buffer does not hold. Returns non-zero when
+# there is no ghost to accept, so callers can fall through to what the key
+# normally does.
 _zhimmer_accept_ghost() {
   [[ -n $POSTDISPLAY && -z $RBUFFER ]] || return 1
   BUFFER=$BUFFER$POSTDISPLAY

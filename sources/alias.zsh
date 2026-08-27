@@ -4,12 +4,14 @@
 
 _zhimmer_source_alias() {
   (( CURRENT == 1 )) || return
-  local -a names disp; local REPLY
-  names=( ${(k)aliases[(I)${PREFIX}*]} ${(k)galiases[(I)${PREFIX}*]} )
+  local -i limit=$2
+  local -a names=( ${(k)aliases[(I)${PREFIX}*]} ${(k)galiases[(I)${PREFIX}*]} )
   (( $#names )) || return
-  local n
-  for n in $names; do
-    _zhimmer_row "$n  →  ${aliases[$n]:-${galiases[$n]}}"; disp+=( "$REPLY" )
-  done
-  _zhimmer_header alias; compadd -l -V zhimmer-alias -X "$REPLY" -d disp -- $names
+  names=( ${names[1,limit]} )
+
+  # The match is the alias; the row says what it stands for.
+  local -a rows=(); local n
+  for n in $names; do rows+=( "$n  →  ${aliases[$n]:-${galiases[$n]}}" ); done
+
+  _zhimmer_addwords zhimmer-alias alias $names -- $rows
 }

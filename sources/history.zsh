@@ -7,7 +7,7 @@ _zhimmer_source_history() {
   [[ -x $ZHIMMER_BIN && -r $HISTFILE ]] || return
   local -a lines
   lines=( ${(f)"$($ZHIMMER_BIN --history $HISTFILE --limit $limit -- "$LBUFFER" 2>/dev/null)"} )
-  # Remembered for ghost text: the top row is what Tab would take.
+  # Remembered for ghost text: the top row is what the accept keys would take.
   typeset -g _zhimmer_top=$lines[1]
   _zhimmer_addgroup zhimmer-history history $wstart "$lines[@]"
 }

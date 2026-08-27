@@ -9,36 +9,44 @@ zhimmer-doctor() {
   zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
 
   print -P '%B== zhimmer ==%b'
-  print "  dir            $ZHIMMER_DIR"
-  print "  enabled        $_zhimmer_enabled"
-  print "  sources        $srcs"
-  print "  max-suggestions $(_zhimmer_cfg max-suggestions 10)"
-  print "  min-chars      $(_zhimmer_cfg min-chars 2)"
-  print "  ghost-text     $(_zhimmer_cfg ghost-text yes)"
+  print "  dir              $ZHIMMER_DIR"
+  print "  enabled          $_zhimmer_enabled"
+  print "  sources          $srcs"
+  # Straight from the table the code reads, so this cannot drift from it.
+  local k REPLY
+  for k in ${(ok)ZHIMMER_DEFAULTS}; do
+    _zhimmer_cfg $k
+    printf '  %-16s %s\n' $k $REPLY
+  done
+  print "  LISTMAX          $LISTMAX"
+  # Which of the completion styles zhimmer set, and so which ones the user's own
+  # configuration had already answered for itself.
+  print "  styles set       ${ZHIMMER_TAMED:-(none)}"
 
   print -P '\n%B== matcher ==%b'
   if [[ -x $ZHIMMER_BIN ]]; then
-    print "  binary         $ZHIMMER_BIN"
+    print "  binary           $ZHIMMER_BIN"
   else
-    print "  binary         MISSING -- run: cargo build --release --manifest-path $ZHIMMER_DIR/zhimmer-match/Cargo.toml"
+    print "  binary           MISSING -- run: cargo build --release --manifest-path $ZHIMMER_DIR/zhimmer-match/Cargo.toml"
   fi
   if [[ -r $HISTFILE ]]; then
-    print "  histfile       $HISTFILE ($(wc -l < $HISTFILE) lines)"
+    print "  histfile         $HISTFILE ($(wc -l < $HISTFILE) lines)"
   else
-    print "  histfile       UNREADABLE: ${HISTFILE:-unset}"
+    print "  histfile         UNREADABLE: ${HISTFILE:-unset}"
   fi
 
   if [[ -x $ZHIMMER_BIN && -r $HISTFILE ]]; then
     print -P "\n%B== candidates for ${(qqq)q} ==%b"
     local -a out
-    out=( ${(f)"$($ZHIMMER_BIN --history $HISTFILE --limit $(_zhimmer_cfg max-suggestions 10) -- "$q")"} )
+    _zhimmer_cfg max-suggestions
+    out=( ${(f)"$($ZHIMMER_BIN --history $HISTFILE --limit $REPLY -- "$q")"} )
     local c; for c in $out; do print "  $c"; done
     (( $#out )) || print "  (none)"
 
     zmodload -i zsh/datetime
     local -F s=$EPOCHREALTIME
     repeat 20 { $ZHIMMER_BIN --history $HISTFILE --limit 10 -- "$q" >/dev/null }
-    printf "\n  %-14s %.2fms per call (budget: 10ms)\n" "timing" $(( (EPOCHREALTIME - s) * 50 ))
+    printf "\n  %-16s %.2fms per call (budget: 10ms)\n" "timing" $(( (EPOCHREALTIME - s) * 50 ))
   fi
 
   print -P '\n%B== environment ==%b'

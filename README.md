@@ -67,24 +67,105 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 |---|---|
 | `↓` | open the menu — falls through to history when there is nothing to show |
 | `↑` `↓` | move within the menu |
-| `→` | accept the ghost at end of line; moves the cursor anywhere else |
-| `Tab` | accept the ghost, or the highlighted row inside the menu; with no ghost, zsh's normal completion |
+| `→` `Ctrl+F` | accept the ghost at end of line; move the cursor anywhere else |
+| `Ctrl+E` `End` | accept the ghost; plain end-of-line when there is none |
+| `Tab` | accept the highlighted row inside the menu; outside it, zsh's normal completion |
 | `Enter` | run |
 | `Esc` | inside the menu, back out and restore the line |
-| `Shift+Tab` | toggle zhimmer on/off |
+| `Shift+Tab` | step back up through Tab's matches |
+| `Ctrl+Space` | toggle zhimmer on/off (`toggle-key`) |
 
 `Esc` is deliberately not bound outside the menu: it is zsh-vi-mode's
 normal-mode switch and it prefixes every arrow-key escape sequence.
+
+### Tab and the drop-down
+
+Tab's matches are drawn by zhimmer too — the same header, rule and one-row-per-line
+layout as the history and file groups, instead of complist's columns. The
+matches themselves still come from the completion system, every completer and
+matcher and quoting rule intact: `compadd` is shadowed for the duration of one
+completion and the call re-issued with zhimmer's display strings in front of
+the original arguments. compadd takes the *first* of a repeated option, so
+going first is what makes it win — and why a completer's own display strings
+are carried over and padded rather than dropped, since `git` has more to say
+about its subcommands than a theme does.
+
+The probe that reads the matches back (`compadd -O`) is the one place the call
+is picked apart, and only to drop `-D`, `-A` and `-O` — the options that write
+into an array. `_describe` passes `-D` and keeps its descriptions there, so
+probing with it ran that filter a second time and left `git` completion with
+nothing at all. Set `style-completion` to `no` to hand the drawing back to
+complist.
+
+Both zhimmer and zsh's completion draw into the same area under the prompt, and
+Tab belongs to completion. So Tab clears zhimmer's rows before completing —
+they describe the word as it was — but never zsh's own: zsh keeps one list
+across a run of Tabs, and clearing it on every press leaves the area blank from
+the second Tab onwards, which is exactly when you are tabbing through a
+directory and want to see it. Afterwards the area belongs to whatever
+completion did with it. Only when there was exactly one match, and so nothing
+to list, does zhimmer redraw its own list for the finished word.
+
+Without that, completing `./Doc` to `./Documents/` left the file list still
+showing the matches for `./Doc`, and an ambiguous completion was hidden
+underneath rows describing the previous word.
+
+`Shift+Tab` steps back up through those matches, so Tab and Shift+Tab move in
+opposite directions through the same list, and does nothing when there is no
+completion standing. Which of those it is gets decided from the line the last
+completion left behind, not from `LASTWIDGET`: with fzf's completion loaded Tab
+is `fzf-completion`, and zhimmer's wrapper runs underneath it.
+
+The on/off switch is `Ctrl+Space`, not `Shift+Tab`. Sharing that key was a bad
+trade — the step-back is pressed constantly and the switch almost never, so the
+switch got hit by accident, and a disabled zhimmer draws nothing at all, which
+looks exactly like a broken one. Turning it off now says so; set `toggle-key`
+to rebind it, or to an empty string to leave the switch unbound.
+
+### Long lists
+
+`tame-lists` (on by default) decides what a completion listing does once it
+outgrows the screen. Past `LISTMAX` zsh replaces it with *"do you wish to see
+all 149 possibilities?"* — a yes/no question where every other Tab gives a list
+— so `LISTMAX=0` and a `list-prompt` turn that question into a scroll.
+
+A scroll is still only a pager, though: `ls /etc/<Tab>` gives 150 names to page
+past, one keypress at a time, with nothing selected and nothing to accept. So
+the same setting also sets `menu select=long`, which hands exactly that case —
+the list that does not fit — to menu selection instead. The arrows walk it, it
+scrolls under them, `Tab` takes the row the cursor is on and `Esc` backs out:
+the menu `↓` opens, reached from `Tab`, with the line being edited still above
+it rather than pushed off the top. The count and position underneath come from
+the same `MENUPROMPT`, which the completion system replaces only when a
+`select-prompt` style is set.
+
+A list that fits is left alone — menu selection never starts, and `Tab` and
+`Shift+Tab` still step through those matches one at a time. The `list-prompt`
+stays for the widgets that only ever list, like `Ctrl+D`, where there is
+nothing to select into.
+
+`list-colors` gets `ma=` from the same `ZHIMMER_SELECT` as zhimmer's own menu.
+Inside the completion system `ZLS_COLORS` is rebuilt from that style for the
+duration of the completion, so without it Tab's selected row falls back to
+reverse video while `↓`'s is a solid bar.
+
+Set `tame-lists` to `no` to leave all of it alone. A style already set by hand
+— `menu`, `list-colors`, `list-prompt`, `group-name` — is never overridden, on
+whatever context pattern it was written.
 
 ## Configuration
 
 ```zsh
 zstyle ':zhimmer:*' sources         history alias command file git-branch zoxide
 zstyle ':zhimmer:*' max-suggestions 10
+zstyle ':zhimmer:*' menu-suggestions 50
 zstyle ':zhimmer:*' min-chars       2
 zstyle ':zhimmer:*' ghost-text      yes
 zstyle ':zhimmer:*' ghost-color     'fg=#6c7086'
 zstyle ':zhimmer:*' expand-alias    yes
+zstyle ':zhimmer:*' tame-lists      yes
+zstyle ':zhimmer:*' style-completion yes
+zstyle ':zhimmer:*' toggle-key      '^@'
 ```
 
 ### Appearance
@@ -112,6 +193,17 @@ not paginate a raw `zle -C` listing, so an over-long list scrolls the prompt off
 the top and takes the earliest candidates with it; zhimmer clamps to
 `$LINES - 5` instead.
 
+The menu `↓` opens is under no such limit: menu selection scrolls, so it holds
+`menu-suggestions` per source (50 by default) and you walk down into the rest,
+with the prompt still above and `12/50 matches -- at 24%` below. A listing has
+to fit; a menu only has to be reachable. Scrolling comes from the `MENUPROMPT`
+and `MENUSCROLL` parameters rather than the `select-prompt` and `select-scroll`
+styles, for the same reason as `ZLS_COLORS`: a raw `zle -C` widget never goes
+through the completion system.
+
+`↓` opens whatever list is on screen, whichever source drew it — a directory
+with 400 entries gets the same bounded, scrolling menu as a five-entry one.
+
 Sources are tried in the order listed, each becoming its own labelled group.
 Adding one means dropping a `_zhimmer_source_<name>` function into `sources/`
 and naming it in the style.
@@ -137,20 +229,28 @@ query, and warnings for the environment problems that actually break this
 plugin — history that only flushes at shell exit, a missing `compinit`, a
 conflicting ghost-text plugin.
 
+The settings it lists come from the same table the code reads, so they cannot
+drift from what is in force, and `styles set` names the completion styles
+zhimmer actually set — the ones missing from that line are the ones your own
+configuration had already answered.
+
 ## Replaces
 
 **zsh-autosuggestions** — zhimmer draws ghost text from the same `POSTDISPLAY`
 mechanism, so running both means two plugins fighting over it.
 
-It does *not* replace zsh's completion system. With no ghost showing, `Tab`
-still completes subcommands, flags and paths exactly as before.
+The accept keys are the same ones: `→`, `Ctrl+F`, `Ctrl+E`, `End`.
 
-`Tab` does take the ghost when there is one. The ghost lives in `POSTDISPLAY`,
-not in `BUFFER`, so leaving that case to zsh's completion left a whole command
-line drawn on screen while `Enter` ran only the part that was typed —
-`git clone https://…` shown, `git clone htt` executed. Ghost text is also
-dropped at `line-finish`, so an accepted line never keeps a tail it did not
-run.
+It does *not* replace zsh's completion system. `Tab` outside the menu still
+completes subcommands, flags and paths exactly as before, and is deliberately
+not an accept key — completing a word is a different gesture from accepting a
+whole remembered line.
+
+That distinction is why the ghost has to be dropped rather than left drawn: it
+lives in `POSTDISPLAY`, not in `BUFFER`, so a suggestion still on screen when
+the line is accepted shows a command the shell never runs — `git clone https://…`
+displayed, `git clone htt` executed. zhimmer clears it whenever the buffer stops
+matching it, and again at `line-finish`.
 
 ## Tests
 
