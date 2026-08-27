@@ -2,8 +2,8 @@
 #
 # The menu is drawn by zsh's own zsh/complist, fed through compadd, so it
 # inherits scrolling, resize handling and terminal safety rather than
-# reimplementing them. History matching and frecency ranking are done by the
-# zhimmer-match binary (see zhimmer-match/). See README.md.
+# reimplementing them. Nothing here is compiled and nothing forks: the history
+# ranking is zsh's own $history, searched in place. See README.md.
 
 (( ${+_zhimmer_loaded} )) && return 0
 typeset -g _zhimmer_loaded=1
@@ -11,7 +11,6 @@ typeset -g _zhimmer_loaded=1
 # %N is this file even when sourced, unlike $0 under some options.
 0=${(%):-%N}
 typeset -g ZHIMMER_DIR=${0:A:h}
-typeset -g ZHIMMER_BIN=$ZHIMMER_DIR/zhimmer-match/target/release/zhimmer-match
 
 zmodload -i zsh/complist || return 1
 
@@ -71,13 +70,23 @@ add-zle-hook-widget line-finish _zhimmer_ghost_finish
 _zhimmer_bindkeys() {
   # Declared once, not per iteration: a second bare `local` on a name that is
   # already local prints it, so the loop would echo the binding at every startup.
-  local m REPLY
+  local m k REPLY
   # The on/off switch, on a key of its own so it is not hit by accident.
   _zhimmer_cfg toggle-key       # ^@ (Ctrl+Space) unless the style says otherwise
   local tkey=$REPLY
+  # Which bytes Down arrives as depends on the terminal: ^[[B normally, ^[OB
+  # once something has put it into application-cursor mode, and neither is
+  # guaranteed to be what this terminfo entry names. zsh's own keymap binds both
+  # forms for that reason, so zhimmer binds both and whatever terminfo adds on
+  # top. (V) writes the terminfo string in the same caret notation bindkey and
+  # _zhimmer_bind_eol read, and an entry the terminal does not have expands to
+  # nothing rather than to an empty binding.
+  zmodload -i zsh/terminfo 2>/dev/null
+  local -a down=( '^[[B' '^[OB' ${(V)terminfo[kcud1]} )
+  local -a btab=( '^[[Z' ${(V)terminfo[kcbt]} )
   for m in emacs viins; do
-    bindkey -M $m '^[[B' zhimmer-down         # Down
-    bindkey -M $m '^[[Z' zhimmer-step-back    # Shift+Tab steps back up
+    for k in $down; do bindkey -M $m $k zhimmer-down; done          # Down
+    for k in $btab; do bindkey -M $m $k zhimmer-step-back; done     # Shift+Tab
     [[ -n $tkey ]] && bindkey -M $m $tkey zhimmer-toggle
     bindkey -M $m ' '    zhimmer-magic-space  # Space expands the alias in place
     _zhimmer_bind_eol $m                      # Ctrl+E / End accept the ghost

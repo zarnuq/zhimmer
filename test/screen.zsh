@@ -30,6 +30,7 @@ sudo openvpn ~/VPNs/no
 cat zhimmer-target-file.txt --verbose
 git status --short --branch
 git status --short --branch
+echo [zhimmer] glob test
 HIST
 
 # A real file, so Tab has something to complete whose history entry extends
@@ -296,6 +297,25 @@ stop
 start
 send "zg"
 checks "the alias group shows what the alias expands to" 'zgs  →  git status -s'
+stop
+
+# A query is text, not a pattern. History holds commands with [, * and ~ in
+# them, and $history is searched with a pattern -- so the query has to be
+# quoted into one, or `echo [` looks for a character class that never closes.
+start
+send "echo [zh"
+checks "a bracket typed at the prompt matches itself, not a character class" 'echo [zhimmer] glob test'
+stop
+
+# The ranking reads $history, the shell's own, rather than the file it would be
+# flushed to -- so a command run in this session is matchable at the next
+# keystroke, with no INC_APPEND_HISTORY and no re-read.
+start
+send "echo zhimmer-session-marker"
+send Enter
+send C-l          # the command has to go: the list is read off the whole screen
+send "echo zhimmer-ses"
+checks "a command run in this session is suggested straight away" 'echo zhimmer-session-marker'
 stop
 
 # `~` does not expand inside a parameter's value, so globbing $PREFIX directly

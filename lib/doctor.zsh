@@ -1,7 +1,7 @@
 # Non-interactive diagnostics. The sources themselves call compadd, which only
 # exists inside a completion widget, so this reports on everything around them:
-# configuration, the matcher binary, and the environment hazards that actually
-# break this plugin in practice.
+# configuration, what the history ranking answers and how fast, and the
+# environment hazards that actually break this plugin in practice.
 
 zhimmer-doctor() {
   local q=${1:-git }
@@ -23,37 +23,39 @@ zhimmer-doctor() {
   # configuration had already answered for itself.
   print "  styles set       ${ZHIMMER_TAMED:-(none)}"
 
-  print -P '\n%B== matcher ==%b'
-  if [[ -x $ZHIMMER_BIN ]]; then
-    print "  binary           $ZHIMMER_BIN"
-  else
-    print "  binary           MISSING -- run: cargo build --release --manifest-path $ZHIMMER_DIR/zhimmer-match/Cargo.toml"
-  fi
-  if [[ -r $HISTFILE ]]; then
-    print "  histfile         $HISTFILE ($(wc -l < $HISTFILE) lines)"
-  else
-    print "  histfile         UNREADABLE: ${HISTFILE:-unset}"
-  fi
+  print -P '\n%B== history ==%b'
+  # What the ranking can see: $history is the shell's own, so this is the whole
+  # of it as long as HISTSIZE is not the smaller of the two numbers.
+  print "  entries          ${#history} in memory (HISTSIZE ${HISTSIZE:-unset}, SAVEHIST ${SAVEHIST:-unset})"
+  (( ${HISTSIZE:-0} < ${SAVEHIST:-0} )) &&
+    print "  WARN             HISTSIZE is below SAVEHIST, so the ranking sees less than the file keeps -- raise HISTSIZE to match"
 
-  if [[ -x $ZHIMMER_BIN && -r $HISTFILE ]]; then
+  if (( ${#history} )); then
     print -P "\n%B== candidates for ${(qqq)q} ==%b"
-    local -a out
+    local -a reply
     _zhimmer_cfg max-suggestions
-    out=( ${(f)"$($ZHIMMER_BIN --history $HISTFILE --limit $REPLY -- "$q")"} )
-    local c; for c in $out; do print "  $c"; done
-    (( $#out )) || print "  (none)"
+    local -i lim=$REPLY
+    _zhimmer_hist_q=
+    _zhimmer_hist_rank "$q" $lim
+    local c; for c in $reply; do print "  $c"; done
+    (( $#reply )) || print "  (none)"
 
+    # Both halves of the cost, because they are what the two are for: the first
+    # keystroke of a word searches the whole history, and every keystroke after
+    # it narrows what that search already found.
     zmodload -i zsh/datetime
     local -F s=$EPOCHREALTIME
-    repeat 20 { $ZHIMMER_BIN --history $HISTFILE --limit 10 -- "$q" >/dev/null }
-    printf "\n  %-16s %.2fms per call (budget: 10ms)\n" "timing" $(( (EPOCHREALTIME - s) * 50 ))
+    repeat 20 { _zhimmer_hist_q=; _zhimmer_hist_rank "$q" $lim }
+    local -F cold=$(( (EPOCHREALTIME - s) * 50 ))
+    s=$EPOCHREALTIME
+    repeat 20 { _zhimmer_hist_rank "$q" $lim }
+    printf "\n  %-16s %.2fms first keystroke, %.2fms narrowing (budget: 10ms)\n" \
+      "timing" $cold $(( (EPOCHREALTIME - s) * 50 ))
   fi
 
   print -P '\n%B== environment ==%b'
   _zhimmer_check "zsh/complist loaded"   "${modules[zsh/complist]:-no}" "loaded"
   _zhimmer_check "compinit has run"      "${+functions[compdef]}"       "1"
-  _zhimmer_check "history written live"  "${options[incappendhistory]:-off}" "on" \
-    "history only flushes at shell exit, so the current session is invisible to the matcher -- add: setopt INC_APPEND_HISTORY"
   _zhimmer_check "zsh-autosuggestions absent" "${+functions[_zsh_autosuggest_start]}" "0" \
     "it also writes POSTDISPLAY; the two will fight over ghost text"
 

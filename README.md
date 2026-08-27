@@ -1,9 +1,10 @@
 # zhimmer
 
 An as-you-type dropdown menu for zsh. Type, and a ranked list of suggestions
-drops down under the prompt; `↓` opens it, `↑`/`↓` move, `Tab` accepts.
+drops down under the prompt; `↓` opens it, `↑`/`↓` and `Tab` move, typing
+narrows it, `Enter` takes the row.
 
-No daemon, no network, no AI, no telemetry.
+No daemon, no network, no AI, no telemetry, nothing compiled.
 
 ```
 $ git ch
@@ -19,19 +20,35 @@ The menu is drawn by zsh's own `zsh/complist`, fed through `compadd`. That is
 deliberate: scrolling, terminal resize, multiplexers and redraw are already
 solved there, and reimplementing them is where comparable tools accumulate bugs.
 
-Matching against shell history is done by `zhimmer-match`, a small Rust binary.
-zsh's own array filtering is fine at a few thousand history entries but degrades
-badly beyond that:
+History matching is zsh's own, and never forks. `${history[(R)pattern]}`
+searches the parameter in place, newest match first, without expanding tens of
+thousands of entries into an array to filter afterwards — that expansion alone
+costs four times the search, and it is what made an earlier attempt at this too
+slow to keep. Then, because typing only ever extends the query, each keystroke
+narrows the previous keystroke's matches instead of searching again: the search
+runs once per word, not once per character.
 
-| history entries | zhimmer-match | zsh `${(M)${(v)history}:#…}` |
+| history entries | first keystroke of a word | every keystroke after it |
 |---|---|---|
-| 8,589 | 3.4 ms | 3.5 ms |
-| 171,780 | 12.8 ms | 77.6 ms |
-| 515,340 | 27.7 ms | 221 ms |
+| 900 | 0.66 ms | 0.18 ms |
+| 10,000 | 2.2 ms | 0.84 ms |
+| 96,000 | 14.4 ms | 1.4 ms |
 
-With `SAVEHIST=1000000` that difference decides whether the shell stays usable.
-Everything else — aliases, `$commands` — already lives in zsh's memory, where
-filtering in place beats paying a fork.
+A keystroke has about 10 ms before the lag is visible, so the ceiling is a
+history in the tens of thousands; past ~50,000 entries the first keystroke of
+each word starts to be felt, while typing on stays flat. Reading `$history`
+rather than `HISTFILE` also means this session's own commands match the moment
+they run, with no `INC_APPEND_HISTORY` needed — but it is `HISTSIZE`, not
+`SAVEHIST`, that decides how much of the file is in memory to match against, so
+`zhimmer-doctor` says which one is holding the number down.
+
+Ranking is frecency — how often a command was run, weighted by how recently it
+last was, the newest occurrence counting four times the oldest. Only the newest
+few hundred occurrences of a prefix are counted: with that weighting the older
+ones cannot change the order, and stopping there is what keeps the cost flat.
+
+Everything else — aliases, `$commands` — already lives in zsh's memory too,
+where filtering in place beats paying a fork.
 
 Two ZLE widgets share one generator:
 
@@ -42,14 +59,21 @@ Two ZLE widgets share one generator:
 
 ## Requirements
 
-zsh 5.8+, and `cargo` to build the matcher.
+zsh 5.8+. Nothing to compile and nothing to install alongside it: the only
+external commands at runtime are the ones a source is *about* — `git` for the
+branch source, `zoxide` for the zoxide one — and each checks for its own before
+drawing anything.
+
+Colours are truecolor (`#rrggbb` on headers, a raw SGR on the selection). On a
+terminal without it, `zmodload zsh/nearcolor` before loading zhimmer maps them
+to the nearest 256-colour approximation.
 
 ## Install
 
 With zplug:
 
 ```zsh
-zplug "<you>/zhimmer", hook-build:"cargo build --release --manifest-path zhimmer-match/Cargo.toml", defer:2
+zplug "zarnuq/zhimmer", defer:2
 ```
 
 `defer:2` loads it after `compinit`. Declare it *before* `zsh-syntax-highlighting`,
@@ -260,10 +284,10 @@ to `no` to turn it off.
 zhimmer-doctor 'git '
 ```
 
-Prints resolved configuration, matcher status and timing, the candidates for a
-query, and warnings for the environment problems that actually break this
-plugin — history that only flushes at shell exit, a missing `compinit`, a
-conflicting ghost-text plugin.
+Prints resolved configuration, how much history the ranking can see, the
+candidates for a query with the time both halves of the search cost, and
+warnings for the environment problems that actually break this plugin — a
+missing `compinit`, a conflicting ghost-text plugin.
 
 The settings it lists come from the same table the code reads, so they cannot
 drift from what is in force, and `styles set` names the completion styles
@@ -291,8 +315,7 @@ matching it, and again at `line-finish`.
 ## Tests
 
 ```zsh
-cargo test --manifest-path zhimmer-match/Cargo.toml   # matcher: parsing, ranking, dedup, limits
-zsh test/screen.zsh                                   # ZLE layer: ghost, navigation, Tab, layout
+zsh test/screen.zsh   # ZLE layer: ghost, navigation, Tab, menu, layout
 ```
 
 ### Notes on testing

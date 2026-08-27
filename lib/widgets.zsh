@@ -213,7 +213,7 @@ _zhimmer_bind_eol() {
     w=( ${(z)l} )
     bound[${(Q)w[-2]}]=$w[-1]     # bindkey [-R] -M <keymap> "<key>" <widget>
   done
-  for k in '^E' '^[[F' '^[[4~' '^[OF'; do
+  for k in '^E' '^[[F' '^[[4~' '^[OF' ${(V)terminfo[kend]}; do
     [[ ${bound[$k]} == (self-insert|) ]] && bindkey -M $m $k end-of-line
   done
   return 0
