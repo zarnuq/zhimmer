@@ -45,20 +45,47 @@ mkdir -p $fh/zalpha $fh/zmany
 : > $fh/zbeta2.txt
 integer i; for i in {1..150}; do : > $fh/zmany/f$i; done
 
+# Forty commands on PATH, more than the ten a list may show, so "the first ten"
+# is a different answer from "ten of them". The command source cut before it
+# sorted, which made the answer whichever ten the hash held first.
+mkdir -p $fh/zbin
+for i in {1..40}; do
+  printf '#!/bin/sh\n' > $fh/zbin/zzc-$(printf '%02d' $i)
+  chmod +x $fh/zbin/zzc-$(printf '%02d' $i)
+done
+
+# A repository with more branches than a list can hold, for the branch source:
+# it has to wait for the subcommand to be over, cut to the limit like every
+# other source, and read the refs once per command rather than once per key.
+git init -q $fh/zrepo
+git -C $fh/zrepo -c user.email=t@t -c user.name=t commit -q --allow-empty -m x
+for i in {1..15}; do git -C $fh/zrepo branch zb-$(printf '%02d' $i); done
+git -C $fh/zrepo branch zfeature-a
+
 mkdir -p $fh/.config/zsh
 cat > $fh/.config/zsh/.zshrc <<RC
 autoload -Uz compinit; compinit -u -d $fh/compdump
 PROMPT='%% '; RPROMPT=''; unsetopt beep
 HISTFILE=$fh/hist_fixture
 alias zgs='git status -s'
-zstyle ':zhimmer:*' sources history alias command file
+zstyle ':zhimmer:*' sources history alias command file git-branch
+PATH=$fh/zbin:\$PATH
 cd $fh
+# A self-insert wrapper that was already there when zhimmer loaded. It
+# uppercases what is typed, so the screen says whether zhimmer chained onto it
+# or replaced it.
+if [[ -n \$ZHIMMER_TEST_CHAIN ]]; then
+  _ztest_upper() { LBUFFER+=\${KEYS:u} }
+  zle -N self-insert _ztest_upper
+fi
 source $root/zhimmer.plugin.zsh
 RC
 
-start() {  # start [cols] [rows]
+extra_env=''
+start() {  # start [cols] [rows]   -- $extra_env goes into the shell's environment
   s=zhimmer-test-$$-$RANDOM
-  tmux new-session -d -s $s -x ${1:-100} -y ${2:-20} "env HOME=$fh TERM=xterm-256color zsh -i"
+  tmux new-session -d -s $s -x ${1:-100} -y ${2:-20} \
+    "env HOME=$fh TERM=xterm-256color $extra_env zsh -i"
   sleep 2
 }
 stop() { tmux kill-session -t $s 2>/dev/null }
@@ -389,6 +416,92 @@ else
   (( fails++ ))
 fi
 stop
+
+# A list shows the first ten matches, not ten of them. The command source cut
+# the hash down to the limit and sorted what was left, so `zzc-` offered
+# whichever ten $commands happened to hold first -- a different ten per shell,
+# and almost never the ten a sorted list promises.
+start
+send "zzc-"
+checks "the command list starts at the first match, not an arbitrary one" 'zzc-01'
+refutes "and stops at the limit rather than sampling past it" 'zzc-40'
+stop
+
+# `ls ./z*` is a glob, and zsh globs it. The file source expanded the word to
+# match on and then stripped the expansion back off each match to rebuild the
+# row -- which only works when the word is a literal. With a glob in it the two
+# are different strings, and the rows read `./z*./zalpha`.
+start
+send "ls ./z*"
+checks  "a glob in the word lists what it matches" './zbeta1.txt'
+refutes "rather than the word with a path stuck on the end" './z*./'
+stop
+
+# The same word with a ~ in front of it: both halves at once, which is where
+# expanding the whole word and stripping it back off went wrong twice.
+start
+send "ls ~/z*"
+checks  "a ~ path with a glob in it lists too" '~/zbeta1.txt'
+refutes "and keeps the ~ rather than the path it stands for" "$fh/zbeta1.txt"
+stop
+
+# zsh expands a command alias in every command position, not only at the start
+# of a line. Testing for "nothing but whitespace before it" left the alias
+# sitting there unexpanded after every pipe and every `;`.
+start
+send "ls | zgs"
+send Space
+check "an alias expands after a pipe, the way zsh expands it" 'ls | git status -s'
+stop
+
+# ...and only in command position. A `|` earlier in the line does not make
+# everything after it a command, so this one is an argument and stays as typed.
+start
+send "echo a| b zgs"
+send Space
+check  "an alias in argument position is left alone" 'echo a| b zgs'
+refute "and is not expanded there" 'git status -s'
+stop
+
+# The branch source waits for the subcommand to be over. On `git branch` the
+# word being completed is the subcommand itself, and matching there asked for
+# branches to replace the word `branch`.
+start
+send "cd zrepo"
+send Enter
+send C-l
+send "git branch"
+refutes "no branch list while the subcommand itself is being typed" 'zfeature-a'
+send " zfea"
+checks  "branches come once there is an argument to complete" 'zfeature-a'
+stop
+
+# Every other source cuts to the limit; this one did not, and a repository with
+# a few hundred branches put all of them in a menu that has no row budget of its
+# own to stop them.
+start
+send "cd zrepo"
+send Enter
+send C-l
+send "git checkout zb-"
+integer branches=$(screen | rg -c 'zb-[0-9]')
+if (( branches <= 10 )); then
+  print "  ok    the branch list is cut to the limit like every other source"
+else
+  print "  FAIL  the branch list ignored the limit ($branches rows for a limit of 10)"
+  (( fails++ ))
+fi
+stop
+
+# self-insert is the busiest widget in the shell and other plugins wrap it too.
+# zhimmer replaced it outright and called the builtin underneath, which dropped
+# whatever was already there -- here, a wrapper that uppercases what is typed.
+extra_env='ZHIMMER_TEST_CHAIN=1'
+start
+send "abc"
+check "zhimmer chains onto an existing self-insert rather than replacing it" 'ABC'
+stop
+extra_env=''
 
 rm -rf $fh
 print ""

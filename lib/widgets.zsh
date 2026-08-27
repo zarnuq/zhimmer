@@ -1,8 +1,24 @@
 # User-facing widgets. The completion widgets themselves live in complete.zsh.
 
+# self-insert is the busiest widget in the shell, and other plugins wrap it too
+# -- autopair, abbreviation expanders, anything that reacts to a character as it
+# is typed. Replacing it outright and calling `zle .self-insert` underneath drops
+# whatever was already there; copying the existing widget aside and calling the
+# copy keeps the chain, which is what accept-line and the completion widgets
+# already do.
+#
+# Called at load and again after zsh-vi-mode's init, so the wrap survives
+# whatever loaded in between. The guard makes the second call a no-op unless
+# something has taken the widget since, in which case it wraps that instead.
+_zhimmer_wrap_self_insert() {
+  [[ ${widgets[self-insert]} == user:.zhimmer-self-insert ]] && return
+  zle -A self-insert .zhimmer-orig-self-insert
+  zle -N self-insert .zhimmer-self-insert
+}
+
 .zhimmer-self-insert() {
   _zhimmer_clear_ghost
-  zle .self-insert
+  zle .zhimmer-orig-self-insert
   _zhimmer_maybe_show
 }
 
@@ -200,8 +216,9 @@ _zhimmer_after_complete() {  # <saved-widget>
 # unbound -- and a literal ^E in the buffer helps nobody. Point them at
 # end-of-line where they are not already doing something else.
 #
-# The keymap is read once, not once per key: `bindkey -M $m $k` is a fork each
-# time, and four keys across two keymaps at every shell start is eight of them.
+# The keymap is read once and asked about all four keys, rather than queried per
+# key: bindkey is a builtin, but reading its answer back needs a $( ), and that
+# is the fork -- one per keymap here instead of one per key per keymap.
 # A key bound through a range (`bindkey -R "!"-"~" self-insert`) does not appear
 # by name here and so reads as unbound -- which lands on the same answer, since
 # the ranges cover printable characters and these four are not among them.

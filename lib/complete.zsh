@@ -149,7 +149,35 @@ _zhimmer_addwords() {
   # navigates columns instead of rows.
   local -a disp=(); local c
   for c in "$rows[@]"; do _zhimmer_row "$c"; disp+=( "$REPLY" ); done
-  compadd -l -V $group -X $header -d disp -a words
+  # -U because a source has already decided what matches. Without it compadd
+  # keeps only the candidates that literally begin with the word on the line and
+  # drops the rest without saying so, which silently threw away every match a
+  # source found by any rule other than a plain prefix: zoxide matches anywhere
+  # in a path -- `z hmr` for ~/src/zhimmer -- and none of those survived, and a
+  # glob in a filename (`ls ./z*`) left the list empty because `./zalpha` does
+  # not start with `./z*`.
+  compadd -l -U -V $group -X $header -d disp -a words
+}
+
+# Sort a source's matches and cut them to its limit, in reply. The two steps
+# every source shares, in the order that makes them mean something: sort the
+# whole match set, then take from the front. Cutting first and sorting after --
+# which the command source did -- sorts an arbitrary handful of the matches and
+# throws the rest away, so `gi` offered ten of the gi* commands picked by hash
+# order rather than the first ten of them.
+#
+# Filtering stays at each source. A hash filters inside itself with (I), which
+# is cheaper than materialising every key to match afterwards, and $commands
+# holds a few thousand of them.
+#
+# Not every source wants this: zoxide's list arrives ranked by frecency, and
+# sorting it alphabetically would throw away the only thing that made it worth
+# asking. Those cut without sorting.
+_zhimmer_pick() {  # <limit> <candidate>...  -> reply
+  local -i limit=$1; shift
+  typeset -ga reply=( ${(o)argv} )
+  (( $#reply > limit )) && reply=( "${(@)reply[1,limit]}" )
+  (( $#reply ))
 }
 
 # Claim rows from the shared budget: one for the group header plus as many as

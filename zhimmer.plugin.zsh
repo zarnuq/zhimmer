@@ -34,11 +34,16 @@ typeset -gA ZHIMMER_DEFAULTS=(
   toggle-key        '^@'
 )
 
-typeset -g f
-for f in $ZHIMMER_DIR/lib/theme.zsh(N) $ZHIMMER_DIR/lib/*.zsh(N) $ZHIMMER_DIR/sources/*.zsh(N); do
-  source $f
+# Alphabetical, and every file in one pass. Naming theme.zsh first as well as
+# letting the glob find it sourced it twice; nothing here runs at source time
+# beyond defining functions and setting defaults, so there is no order to keep.
+# The loop variable is namespaced because this runs at file scope, where `local`
+# does not exist -- a bare `f` would take the user's own `f` with it on unset.
+typeset -g _zhimmer_f
+for _zhimmer_f in $ZHIMMER_DIR/lib/*.zsh(N) $ZHIMMER_DIR/sources/*.zsh(N); do
+  source $_zhimmer_f
 done
-unset f
+unset _zhimmer_f
 
 # Draw-only: lists candidates without touching the buffer, so it can run on
 # every keystroke without blocking.
@@ -53,7 +58,7 @@ zle -N zhimmer-toggle      .zhimmer-toggle
 zle -N zhimmer-step-back   .zhimmer-step-back
 zle -N zhimmer-down        .zhimmer-down
 zle -N zhimmer-magic-space .zhimmer-magic-space
-zle -N self-insert         .zhimmer-self-insert
+_zhimmer_wrap_self_insert
 _zhimmer_wrap_refresh
 _zhimmer_wrap_accept
 _zhimmer_wrap_complete
@@ -91,9 +96,12 @@ _zhimmer_bindkeys() {
     bindkey -M $m ' '    zhimmer-magic-space  # Space expands the alias in place
     _zhimmer_bind_eol $m                      # Ctrl+E / End accept the ghost
   done
-  # compinit replaces the completion widgets when it runs, so re-assert the wrap
-  # here as well: sourcing zhimmer before compinit would otherwise lose it.
+  # compinit replaces the completion widgets when it runs, so re-assert that wrap
+  # here: sourcing zhimmer before compinit would otherwise lose it. self-insert
+  # goes with it because this point is after zsh-vi-mode's init too, and the
+  # guard makes it a no-op unless something in between has taken the widget.
   _zhimmer_wrap_complete
+  _zhimmer_wrap_self_insert
   # Enter expands a bare alias too. Done here, after zsh-vi-mode's init, so the
   # chain wraps vi-mode's accept-line rather than being wiped by it.
   _zhimmer_wrap_acceptline

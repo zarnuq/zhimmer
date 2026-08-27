@@ -50,6 +50,13 @@ ones cannot change the order, and stopping there is what keeps the cost flat.
 Everything else — aliases, `$commands` — already lives in zsh's memory too,
 where filtering in place beats paying a fork.
 
+The two sources that cannot avoid one, `git-branch` and `zoxide`, pay it once
+per command line rather than once per keystroke. Both answer questions that only
+change when something is *run* — a branch created, a directory visited — so the
+answer is cached against `HISTCMD` and re-read on the next prompt. Per keystroke
+those two cost 1.4 ms and 4.4 ms respectively, which is more than ranking ten
+thousand history entries; per command line they cost nothing worth measuring.
+
 Two ZLE widgets share one generator:
 
 - `zhimmer-show` (`list-choices`) draws the list without touching the buffer, so
@@ -62,7 +69,8 @@ Two ZLE widgets share one generator:
 zsh 5.8+. Nothing to compile and nothing to install alongside it: the only
 external commands at runtime are the ones a source is *about* — `git` for the
 branch source, `zoxide` for the zoxide one — and each checks for its own before
-drawing anything.
+drawing anything, then reads it once per command line rather than once per
+keystroke.
 
 Colours are truecolor (`#rrggbb` on headers, a raw SGR on the selection). On a
 terminal without it, `zmodload zsh/nearcolor` before loading zhimmer maps them
