@@ -276,6 +276,24 @@ Sources are tried in the order listed, each becoming its own labelled group.
 Adding one means dropping a `_zhimmer_source_<name>` function into `sources/`
 and naming it in the style.
 
+### Ghost text
+
+The greyed preview past the cursor is the top row of whatever is on screen, and
+every group offers its first row as it is drawn. History outranks the rest, so
+a whole remembered line wins over a single completed word — typing `gi` shows
+the `git push --force-with-lease` you actually ran, not `git` completed from
+`$PATH`. Between the others the earliest group drawn keeps it, which is the
+order the `sources` style lists them in.
+
+```zsh
+ZHIMMER_GHOST_RANK[history]=0    # lower wins; everything unlisted is 1
+```
+
+A candidate that is not an extension of what is typed simply draws no ghost, so
+a source matching by any rule other than a prefix — zoxide finds `~/src/zhimmer`
+from `z hmr` — contributes rows to the menu without ever putting text that does
+not follow from the line in front of the cursor.
+
 ### Alias expansion
 
 With `expand-alias yes` (the default), an alias is rewritten in place to the
@@ -323,8 +341,20 @@ matching it, and again at `line-finish`.
 ## Tests
 
 ```zsh
+zsh test/unit.zsh     # pure logic: ranking, rows, aliases, ghost precedence
 zsh test/screen.zsh   # ZLE layer: ghost, navigation, Tab, menu, layout
 ```
+
+The two are split by what they cost. `unit.zsh` sources the libraries without a
+line editor and runs in about 15ms, so it can go on every save; `screen.zsh`
+drives a real zsh through tmux and takes roughly half an hour. A ranking bug
+belongs in the first — reading a history line with a stray `[` in it shipped as
+an `invalid subscript` at the prompt, and the whole of what was wrong fits in
+four lines of assertion.
+
+A zsh arithmetic error is fatal rather than catchable, so `unit.zsh` prints
+`ABORTED` and exits non-zero if it ends early; a short run of `ok` lines is not
+a pass.
 
 ### Notes on testing
 

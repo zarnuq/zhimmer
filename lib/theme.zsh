@@ -61,7 +61,7 @@ typeset -g ZHIMMER_MATCH_PROMPT='%M matches -- at %p'
 _zhimmer_header() {
   local name=$1
   local color=${ZHIMMER_COLORS[$name]:-'#6c7086'}
-  local -i w=$(( COLUMNS - ${#name} - 4 ))
+  local -i w=$(( COLUMNS - ${(m)#name} - 4 ))
   (( w < 0 )) && w=0
   REPLY="%F{$color}%B ${name}%b%f %F{$ZHIMMER_RULE_COLOR}${(l:w::─:):-}%f"
 }
@@ -73,6 +73,17 @@ _zhimmer_row() {
   local t="  $1"
   local -i w=$(( COLUMNS - 1 ))
   (( w < 10 )) && w=10
-  (( ${#t} > w )) && t="${t[1,w-1]}…"
-  REPLY="${(r:w:)t}"
+  # Columns, not characters. `~/文書/notes.txt` is 14 of one and 16 of the
+  # other, so counting characters under-padded the bar and let a row run past
+  # the right edge onto a second line -- the exact desync the truncation is
+  # here to prevent. (m) counts what the terminal will actually draw.
+  #
+  # Two columns are held back rather than one because a cut that lands inside a
+  # double-width character keeps that character whole: truncating to w-1 can
+  # come back w wide, and the ellipsis would then make it w+1.
+  if (( ${(m)#t} > w )); then
+    local -i n=$(( w - 2 ))
+    t="${(mr:n:)t}…"
+  fi
+  REPLY="${(mr:w:)t}"
 }

@@ -31,6 +31,7 @@ cat zhimmer-target-file.txt --verbose
 git status --short --branch
 git status --short --branch
 echo [zhimmer] glob test
+grep -rn 'zhimmer(' .
 HIST
 
 # A real file, so Tab has something to complete whose history entry extends
@@ -185,6 +186,27 @@ refute "Tab drops the ghost computed for the shorter word" 'txtget-file'
 check  "Tab completed the filename, and the ghost is recomputed for it" 'cat zhimmer-target-file.txt --verbose'
 stop
 
+# The ghost is the top row of whatever is on screen, and every group offers its
+# first row as it is drawn. It used to come from the history source alone, so a
+# list drawn by any other source sat there with nothing in front of the cursor.
+start
+send "cat zbet"
+check "a file source puts a ghost up when history has no match" 'cat zbeta1.txt'
+stop
+
+# And when both have something to say, history wins: a whole remembered line is
+# worth more than a command name completed out of $PATH. Without the rank this
+# would be decided by whichever source the `sources` style happens to name
+# first, which is not a decision the user meant to make when ordering the list.
+start
+# Asserted on the line being edited, not the screen: the drop-down is showing
+# these same strings as rows, so a whole-screen match would pass with no ghost
+# in front of the cursor at all. A ghost of `git` from $commands leaves the line
+# reading `git`, which does not contain the history line.
+send "gi"
+check "history outranks the command source for the ghost" 'git status --short --branch'
+stop
+
 # Whatever is left showing when the line is accepted has to be what runs. The
 # ghost is display-only -- it lives in POSTDISPLAY, not BUFFER -- so it must be
 # gone by then rather than printed as part of the command that ran.
@@ -332,6 +354,15 @@ stop
 start
 send "echo [zh"
 checks "a bracket typed at the prompt matches itself, not a character class" 'echo [zhimmer] glob test'
+stop
+
+# A match is a key in the ranking's hashes, and it was also read back as one
+# inside $(( )), where the key is parsed as arithmetic -- so a history line
+# holding a stray ( or [ was an invalid subscript that took the whole list down
+# with it, not just its own row.
+start
+send "grep -r"
+checks "a match with an unbalanced bracket in it still ranks" "grep -rn 'zhimmer(' ."
 stop
 
 # The ranking reads $history, the shell's own, rather than the file it would be
@@ -484,7 +515,11 @@ send "cd zrepo"
 send Enter
 send C-l
 send "git checkout zb-"
-integer branches=$(screen | rg -c 'zb-[0-9]')
+# Indented rows only. A bare count of the branch name over the whole screen
+# also catches the line being edited, which now carries a ghost of the top
+# branch -- so a correctly cut list of ten read as eleven. Rows are indented by
+# two (_zhimmer_row); the prompt line is not.
+integer branches=$(screen | rg -c '^\s+zb-[0-9]')
 if (( branches <= 10 )); then
   print "  ok    the branch list is cut to the limit like every other source"
 else

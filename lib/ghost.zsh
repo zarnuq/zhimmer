@@ -7,6 +7,28 @@
 # zsh inserts the highlighted match into the buffer itself, and a ghost would be
 # showing the same text twice.
 
+# Which source's top row becomes the ghost when more than one group is drawn.
+# Every group offers its first row as it is added; the lowest rank wins, and
+# ties keep whichever offered first -- which is the order the `sources` style
+# lists them in.
+#
+# History outranks everything because it is the only source offering a whole
+# remembered line. Completing `gi` to `git` from $commands is worth less than
+# the `git push --force-with-lease` the line is actually heading for, and
+# without a rank the winner would just be whichever source the user happened to
+# name first.
+typeset -gA ZHIMMER_GHOST_RANK=( history 0 )
+
+# Offer a candidate for the ghost. Kept apart from the group helpers, which
+# cannot run outside a completion widget, so the precedence rule itself is
+# testable on its own.
+_zhimmer_offer_ghost() {  # <source-name> <whole-line candidate>
+  local -i rank=${ZHIMMER_GHOST_RANK[$1]:-1}
+  [[ -n $_zhimmer_top ]] && (( rank >= _zhimmer_top_rank )) && return
+  typeset -g _zhimmer_top=$2
+  typeset -gi _zhimmer_top_rank=$rank
+}
+
 _zhimmer_clear_ghost() {
   POSTDISPLAY=
   region_highlight=( ${region_highlight:#*memo=zhimmer*} )

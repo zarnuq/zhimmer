@@ -33,7 +33,10 @@ _zhimmer_maybe_show() {
   local REPLY; _zhimmer_cfg min-chars
   (( ${#LBUFFER} >= REPLY )) || return
 
+  # Cleared before the groups are drawn, since each one offers its top row as
+  # the redraw goes and the rank decides between them.
   typeset -g _zhimmer_top=
+  typeset -gi _zhimmer_top_rank=0
   zle zhimmer-show
   _zhimmer_ghost
 }

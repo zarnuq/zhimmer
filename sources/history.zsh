@@ -65,7 +65,10 @@ _zhimmer_hist_rank() {  # <query> <limit>
   local -a scored=()
   local -i n=$i v r
   for c in ${(k)cnt}; do
-    v=${cnt[$c]} r=$(( n - pos[$c] ))
+    # Both read outside the math, not as pos[$c] inside it: there the key is
+    # parsed as an arithmetic subscript, and a history line holding a stray ( or
+    # [ is an invalid one.
+    v=${cnt[$c]} r=$(( n - ${pos[$c]} ))
     scored+=( "$(( (v * (1000 + 3000 * r / n)) * 1000 + r ))"$'\t'"$c" )
   done
   reply=( ${${(On)scored}[1,limit]#*$'\t'} )
@@ -76,7 +79,7 @@ _zhimmer_source_history() {
   local -a reply
   _zhimmer_hist_rank "$LBUFFER" $limit
   (( $#reply )) || return
-  # Remembered for ghost text: the top row is what the accept keys would take.
-  typeset -g _zhimmer_top=$reply[1]
+  # The top row goes to the ghost through _zhimmer_addgroup, which offers the
+  # first row of every group it draws -- see ZHIMMER_GHOST_RANK in ghost.zsh.
   _zhimmer_addgroup zhimmer-history history $wstart "$reply[@]"
 }

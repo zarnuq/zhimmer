@@ -1,6 +1,28 @@
 # The shared candidate generator, plus the two entry points that differ only in
 # whether the result is merely listed or handed to menu selection.
 
+# Every scalar setting and its default, in one table: _zhimmer_cfg and
+# _zhimmer_bool read it and zhimmer-doctor prints it, so a default is written
+# down once instead of at each call site and again in the diagnostics. The
+# `sources` style is not here -- it is an array, read with zstyle -a.
+#
+# It lives beside the two functions that read it rather than in the plugin
+# file, which is what lets the libraries be sourced and exercised on their own:
+# with the table out of reach _zhimmer_bool answered no to every setting, and a
+# test of alias expansion tested nothing but the guard at the top of it.
+typeset -gA ZHIMMER_DEFAULTS=(
+  max-suggestions   10
+  menu-suggestions  50
+  min-chars         2
+  ghost-text        yes
+  ghost-color       'fg=#6c7086'
+  expand-alias      yes
+  tame-lists        yes
+  type-to-filter    yes
+  style-completion  yes
+  toggle-key        '^@'
+)
+
 # Read a setting. The answer comes back in REPLY rather than on stdout, for the
 # same reason the row and header helpers do it: these run on every keystroke and
 # $( ) forks, which costs more than the matcher it is about to call. Defaults
@@ -99,6 +121,7 @@ _zhimmer_addgroup() {
   _zhimmer_take $#
   (( _zhimmer_taken )) || return
   set -- "${@[1,_zhimmer_taken]}"
+  _zhimmer_offer_ghost $name "$1"
   local REPLY
   _zhimmer_header $name; local header=$REPLY
   local -a full=() tails=()
@@ -141,6 +164,14 @@ _zhimmer_addwords() {
   else
     rows=( "${(@)words}" )
   fi
+
+  # A word source replaces only the current word, so the ghost -- which is
+  # compared against the whole of LBUFFER -- needs the line the match would
+  # make, not the match. Everything before the current word, plus the match.
+  # A candidate that is not an extension of what is typed simply draws no
+  # ghost: zoxide matches anywhere in a path, so `z hmr` offers a line that
+  # does not begin with `z hmr`, and _zhimmer_ghost drops it.
+  _zhimmer_offer_ghost $name "${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}${words[1]}"
 
   local REPLY
   _zhimmer_header $name; local header=$REPLY

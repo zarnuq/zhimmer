@@ -17,23 +17,6 @@ zmodload -i zsh/complist || return 1
 # Toggled by zhimmer-toggle, on toggle-key (Ctrl+Space by default).
 typeset -g _zhimmer_enabled=1
 
-# Every scalar setting and its default, in one table: _zhimmer_cfg and
-# _zhimmer_bool read it and zhimmer-doctor prints it, so a default is written
-# down once instead of at each call site and again in the diagnostics. The
-# `sources` style is not here -- it is an array, read with zstyle -a.
-typeset -gA ZHIMMER_DEFAULTS=(
-  max-suggestions   10
-  menu-suggestions  50
-  min-chars         2
-  ghost-text        yes
-  ghost-color       'fg=#6c7086'
-  expand-alias      yes
-  tame-lists        yes
-  type-to-filter    yes
-  style-completion  yes
-  toggle-key        '^@'
-)
-
 # Alphabetical, and every file in one pass. Naming theme.zsh first as well as
 # letting the glob find it sourced it twice; nothing here runs at source time
 # beyond defining functions and setting defaults, so there is no order to keep.
