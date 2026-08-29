@@ -2,6 +2,9 @@
 
 _zhimmer_source_command() {
   (( CURRENT == 1 )) || return
+  # As in the alias source: an empty word matches every executable on $PATH,
+  # and ten of those in alphabetical order is not a suggestion.
+  [[ -n $PREFIX ]] || return
   local -i limit=$2
   local -a reply
   # Filtered inside the hash with (I) rather than by materialising every key

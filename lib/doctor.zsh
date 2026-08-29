@@ -3,6 +3,18 @@
 # configuration, what the history ranking answers and how fast, and the
 # environment hazards that actually break this plugin in practice.
 
+# Plugins that cannot share the mechanism zhimmer works through. Each entry is
+# a name, a pattern matched against the function table, and what goes wrong --
+# split on `|`, so a table of them is one line each rather than a paragraph of
+# ifs. Detection is by function name because that is what survives being loaded
+# by any of the framework managers, none of which agree on anything else.
+typeset -ga ZHIMMER_CONFLICTS=(
+  'zsh-autosuggestions|_zsh_autosuggest_start|it also writes POSTDISPLAY; the two fight over ghost text'
+  'fzf-tab|fzf-tab-complete|it also shadows compadd to draw Tab, so only one of the two styles a list -- set style-completion no to yield'
+  'zsh-autocomplete|.autocomplete.__init__|it draws its own as-you-type menu from the same keys; run one or the other'
+  'zsh-abbr|abbr|it expands on Space as well -- turn off expand-alias if the two disagree about a word'
+)
+
 zhimmer-doctor() {
   local q=${1:-git }
   local -a srcs
@@ -56,8 +68,17 @@ zhimmer-doctor() {
   print -P '\n%B== environment ==%b'
   _zhimmer_check "zsh/complist loaded"   "${modules[zsh/complist]:-no}" "loaded"
   _zhimmer_check "compinit has run"      "${+functions[compdef]}"       "1"
-  _zhimmer_check "zsh-autosuggestions absent" "${+functions[_zsh_autosuggest_start]}" "0" \
-    "it also writes POSTDISPLAY; the two will fight over ghost text"
+  # Straight from the table, so a conflict is added in one line and reported
+  # in the same words as every other check.
+  local -a c
+  local -i found
+  local e
+  for e in $ZHIMMER_CONFLICTS; do
+    c=( ${(s:|:)e} )
+    found=0
+    [[ -n ${(M)${(k)functions}:#${~c[2]}} ]] && found=1
+    _zhimmer_check "$c[1] absent" $found 0 "$c[3]"
+  done
 
   local sf
   for sf in $srcs; do

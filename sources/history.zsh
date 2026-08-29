@@ -22,7 +22,10 @@ _zhimmer_hist_rank() {  # <query> <limit>
   local q=$1
   local -i limit=$2
   typeset -ga reply=()
-  (( $#q )) || return
+  # A line of nothing but whitespace is as empty as an empty one: it is not a
+  # prefix anybody is searching for, and ranking against it offered whatever
+  # happened to be at the top of the history.
+  [[ -n ${q//[[:space:]]/} ]] || return
 
   # Kept in the cache rather than copied out of it: at ten thousand entries a
   # `git ` search matches thousands of them, and one array copy per keystroke

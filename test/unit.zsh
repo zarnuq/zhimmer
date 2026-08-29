@@ -33,6 +33,8 @@ source $root/lib/complete.zsh
 source $root/lib/ghost.zsh
 source $root/lib/expand.zsh
 source $root/sources/history.zsh
+source $root/sources/alias.zsh
+source $root/sources/command.zsh
 
 is() {  # is <label> <got> <want>
   (( checks++ ))
@@ -274,6 +276,145 @@ _zhimmer_offer_ghost zoxide '/home/u/src'
 is "a source with no rank of its own still offers" "$_zhimmer_top" '/home/u/src'
 _zhimmer_offer_ghost history 'zoxide add .'
 is "  and history still outranks it" "$_zhimmer_top" 'zoxide add .'
+
+# ------------------------------------------------------------ source parsers ---
+#
+# Each source that has to read something keeps the reading and the parsing
+# apart, so the parsing can be checked against a fixture here rather than
+# against whatever the machine running the tests happens to have installed.
+print '\n== source parsers =='
+source $root/sources/ssh-host.zsh
+source $root/sources/git-branch.zsh
+source $root/sources/git-file.zsh
+source $root/sources/make.zsh
+source $root/sources/npm-script.zsh
+
+_zhimmer_ssh_config_hosts 'Host web1 web2
+  Host bastion
+Host *.internal
+Host prod-? !nope
+# a comment
+Host quoted-one'
+is "ssh config: names from Host lines, indented ones included" "${(j:,:)reply}" 'web1,web2,bastion,quoted-one'
+
+_zhimmer_known_hosts 'web1,192.168.1.5 ssh-rsa AAAA
+|1|aGFzaGVk=|bm90aGluZw== ssh-rsa BBBB
+@cert-authority ca.example.com ssh-rsa CCCC
+[alt.example.com]:2222 ssh-ed25519 DDDD
+# a comment'
+# The exact list is the assertion: the hashed entry is absent from it, which
+# is what matters -- a hashed known_hosts cannot be read back, and a row of
+# base64 is worse than no row at all.
+is "known_hosts: comma lists split, markers and ports handled, hashes dropped" "${(j:,:)reply}" 'web1,192.168.1.5,ca.example.com,alt.example.com'
+
+_zhimmer_git_refs 'refs/heads/main
+refs/heads/feature/x
+refs/remotes/origin/main
+refs/remotes/origin/HEAD
+refs/remotes/upstream/main'
+is "git refs: local heads"            "${(j:,:)_zhimmer_git_heads}"     'main,feature/x'
+is "git refs: remote names, once each" "${(j:,:)_zhimmer_git_remotes}"   'origin,upstream'
+# origin/HEAD is a symbolic ref to the branch beside it, not a branch of its
+# own, and its absence from this list is the assertion.
+is "git refs: remote-tracking branches, without the remote HEAD" "${(j:,:)_zhimmer_git_rbranches}" 'origin/main,upstream/main'
+
+_zhimmer_git_status_paths ' M lib/theme.zsh
+?? test/unit.zsh
+R  old.txt -> new.txt
+ D gone.txt'
+is "git status: the path, not the status columns" "${(j:,:)reply}" 'lib/theme.zsh,test/unit.zsh,new.txt,gone.txt'
+
+_zhimmer_make_targets 'CC := gcc
+VPATH = src
+.PHONY: all clean
+all: build test
+build:
+	$(CC) -o x
+%.o: %.c
+	touch $@
+test-unit: build
+clean:'
+is "make: targets, not assignments, recipes or pattern rules" "${(j:,:)reply}" 'all,build,test-unit,clean'
+
+_zhimmer_npm_scripts '{
+  "name": "x",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "jest --a,b",
+    "dev": "vite"
+  },
+  "devDependencies": { "vite": "^5" }
+}'
+# Two things at once: the comma inside the test command did not split a key
+# out of a value, and the block ended at its own closing brace rather than
+# running on into devDependencies.
+is "npm: script names only, values and later objects left alone" "${(j:,:)reply}" 'build,test,dev'
+
+fails_ "a package.json with no scripts reports so" _zhimmer_npm_scripts '{ "name": "x" }'
+fails_ "and a makefile with no targets does too"   _zhimmer_make_targets 'CC := gcc'
+
+# ------------------------------------------------------ an empty word is not ---
+#
+# A source that keys only off the word being typed needs a word. With none, the
+# alias source matched every alias and the command source every executable on
+# $PATH -- and the top of that went on the line as a ghost. Two spaces at a
+# stock prompt was enough to do it.
+#
+# The sources call compadd, which exists only inside a completion widget, so
+# what each would have drawn is recorded instead of drawn. The positive cases
+# are here for that reason: without them a stub that never fires would make
+# every "draws nothing" pass for the wrong reason.
+print '\n== an empty word is not a query =='
+_zhimmer_addwords() { typeset -g _zhimmer_drawn=$2 }
+_zhimmer_addgroup() { typeset -g _zhimmer_drawn=$2 }
+
+_probe() {  # _probe <source> <CURRENT> <PREFIX> <LBUFFER>
+  typeset -g _zhimmer_drawn=
+  CURRENT=$2 PREFIX=$3 LBUFFER=$4
+  _zhimmer_source_$1 0 10
+  return 0
+}
+
+_probe alias 1 '' ''
+is "an empty word draws no aliases" "$_zhimmer_drawn" ''
+_probe alias 1 '  ' '  '
+is "and neither does a word of whitespace" "$_zhimmer_drawn" ''
+_probe alias 1 g g
+is "but a word that was typed does" "$_zhimmer_drawn" 'alias'
+
+_probe command 1 '' ''
+is "an empty word draws no commands" "$_zhimmer_drawn" ''
+_probe command 1 ls ls
+is "a typed one does" "$_zhimmer_drawn" 'command'
+
+_probe history 1 '' '   '
+is "a line of whitespace ranks no history" "$_zhimmer_drawn" ''
+_probe history 1 '' 'git '
+is "a real prefix does" "$_zhimmer_drawn" 'history'
+
+# The same guard, at the level the ranking itself works, so zhimmer-doctor and
+# any future caller get the same answer.
+_zhimmer_hist_q=; _zhimmer_hist_rank '   ' 5
+is "the ranking treats whitespace as no query at all" $#reply 0
+
+# ----------------------------------------------- features that switch off ---
+#
+# Every yes/no setting has to actually gate something. A style nobody reads is
+# worse than no style: it reads as a promise in the README.
+print '\n== features switch off =='
+zstyle -d ':zhimmer:*'
+region_highlight=()
+_zhimmer_top='git status --short'
+BUFFER=git LBUFFER=git RBUFFER= POSTDISPLAY=
+
+_zhimmer_ghost
+is "ghost text is drawn by default" "$POSTDISPLAY" ' status --short'
+
+zstyle ':zhimmer:*' ghost-text no
+POSTDISPLAY=
+_zhimmer_ghost
+is "and not at all with ghost-text no" "$POSTDISPLAY" ''
+zstyle -d ':zhimmer:*'
 
 # --------------------------------------------------------------- settings ---
 print '\n== settings =='

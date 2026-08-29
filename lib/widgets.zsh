@@ -22,22 +22,50 @@ _zhimmer_wrap_self_insert() {
   _zhimmer_maybe_show
 }
 
+# Whether zhimmer's own rows are on screen, carried from the last keystroke to
+# this one. Deciding not to draw is not the same as leaving the screen alone:
+# deleting a line back to empty left the list for the word that used to be
+# there standing under an empty prompt, describing a buffer that no longer
+# existed. Every way out of this function now says what becomes of those rows.
+#
+# Only zhimmer's own. A list zsh put there belongs to the completion system,
+# and taking that away on a keystroke is what makes tabbing through a directory
+# impossible -- the same distinction _zhimmer_after_complete draws.
+_zhimmer_drop_rows() {  # <were there any>
+  typeset -g _zhimmer_rows_for=
+  (( $1 )) && zle -R -c
+  return 0
+}
+
 _zhimmer_maybe_show() {
+  local -i had=$_zhimmer_drew
   _zhimmer_drew=0
-  (( _zhimmer_enabled )) || return
+
+  (( _zhimmer_enabled )) || { _zhimmer_drop_rows $had; return }
   # Skip while input is still arriving. During fast typing or a paste the result
   # would be discarded by the next keystroke anyway, so this is the cheapest
   # guard available and it matters more than any micro-optimisation inside the
-  # generator.
-  (( PENDING || KEYS_QUEUED_COUNT )) && return
+  # generator. The rows stand: the keystroke that ends the burst redraws them,
+  # and clearing here would flicker the list away and back on every burst.
+  if (( PENDING || KEYS_QUEUED_COUNT )); then
+    _zhimmer_drew=$had
+    return
+  fi
   local REPLY; _zhimmer_cfg min-chars
-  (( ${#LBUFFER} >= REPLY )) || return
+  (( ${#LBUFFER} >= REPLY )) || { _zhimmer_drop_rows $had; return }
 
   # Cleared before the groups are drawn, since each one offers its top row as
   # the redraw goes and the rank decides between them.
   typeset -g _zhimmer_top=
   typeset -gi _zhimmer_top_rank=0
+  # Recorded before the draw, not after: listing does not touch the buffer, and
+  # the redraw the draw itself provokes would otherwise see rows attributed to
+  # whatever was on screen last and take them straight back down.
+  typeset -g _zhimmer_rows_for=$BUFFER
   zle zhimmer-show
+  # Every source may have declined -- an empty word, or nothing matching what
+  # is typed -- and the rows from the last keystroke are still up if so.
+  (( _zhimmer_drew )) || _zhimmer_drop_rows $had
   _zhimmer_ghost
 }
 
@@ -109,12 +137,22 @@ _zhimmer_note_menu() {
 # widget name rather than by key matters: which widget backspace reaches depends
 # on the keymap -- with EDITOR=nvim zsh selects viins, where it is
 # vi-backward-delete-char, not backward-delete-char.
+# This list is a convenience, not the guarantee -- see the redraw guard in
+# ghost.zsh, which catches whatever is missing from it. It was worth widening
+# anyway: ^U is vi-kill-line under viins, which zsh selects whenever EDITOR
+# looks like vi, and a name that is not here clears the rows instead of
+# refreshing them.
 typeset -ga ZHIMMER_REFRESH_WIDGETS=(
   backward-delete-char    vi-backward-delete-char
   backward-kill-word      vi-backward-kill-word
   delete-char             vi-delete-char
   kill-word               kill-line
   backward-kill-line      kill-whole-line
+  kill-region             yank                    yank-pop
+  undo                    redo
+  vi-kill-line            vi-kill-eol             vi-delete
+  vi-change               vi-change-eol           vi-change-whole-line
+  vi-substitute           vi-put-after            vi-put-before
 )
 
 _zhimmer_wrap_refresh() {
@@ -156,6 +194,25 @@ _zhimmer_wrap_accept() {
       _zhimmer_accept_ghost || zle .$w
     "
     zle -N $w .zhimmer-accept-$w
+  done
+}
+
+# The same keys again, a word at a time. Separate from the list above because
+# these take part of the suggestion rather than all of it, and so have to be
+# told which widget to measure a word with -- the wrapper passes its own name
+# down rather than picking one.
+typeset -ga ZHIMMER_ACCEPT_WORD_WIDGETS=(
+  forward-word  vi-forward-word  vi-forward-word-end  emacs-forward-word
+)
+
+_zhimmer_wrap_accept_word() {
+  local w
+  for w in $ZHIMMER_ACCEPT_WORD_WIDGETS; do
+    [[ ${widgets[$w]} == builtin ]] || continue
+    functions[.zhimmer-accept-word-$w]="
+      _zhimmer_accept_ghost_word .$w || zle .$w
+    "
+    zle -N $w .zhimmer-accept-word-$w
   done
 }
 
@@ -214,7 +271,8 @@ _zhimmer_after_complete() {  # <saved-widget>
 }
 
 # Ctrl+E and End reach the ghost through the end-of-line widget wrapped above,
-# which only works where those keys are bound to it. They are under emacs, and
+# and Ctrl+Right and Alt+Right reach it a word at a time through forward-word;
+# both only work where those keys are bound to those widgets. They are under emacs, and
 # under zsh-vi-mode's insert keymap, but a bare viins leaves them self-insert or
 # unbound -- and a literal ^E in the buffer helps nobody. Point them at
 # end-of-line where they are not already doing something else.
@@ -225,7 +283,7 @@ _zhimmer_after_complete() {  # <saved-widget>
 # A key bound through a range (`bindkey -R "!"-"~" self-insert`) does not appear
 # by name here and so reads as unbound -- which lands on the same answer, since
 # the ranges cover printable characters and these four are not among them.
-_zhimmer_bind_eol() {
+_zhimmer_bind_motion() {
   local m=$1 k l
   local -a w
   local -A bound
@@ -235,6 +293,13 @@ _zhimmer_bind_eol() {
   done
   for k in '^E' '^[[F' '^[[4~' '^[OF' ${(V)terminfo[kend]}; do
     [[ ${bound[$k]} == (self-insert|) ]] && bindkey -M $m $k end-of-line
+  done
+  # Neither of zsh's stock keymaps binds Ctrl+Right or Alt+Right, so taking a
+  # word of the ghost would have no key to press without naming them. Alt+f is
+  # already forward-word under emacs and is left as it is there; under viins it
+  # is not bound, and this gives it the same meaning.
+  for k in '^[[1;5C' '^[[1;3C' '^[f'; do
+    [[ ${bound[$k]} == (self-insert|) ]] && bindkey -M $m $k forward-word
   done
   return 0
 }

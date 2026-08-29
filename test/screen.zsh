@@ -55,6 +55,19 @@ for i in {1..40}; do
   chmod +x $fh/zbin/zzc-$(printf '%02d' $i)
 done
 
+# A makefile, for the target source: read as text rather than asked of make,
+# so what it can see is what is written in the first column.
+cat > $fh/Makefile <<'MAKE'
+CC := gcc
+.PHONY: zbuild
+zbuild: zdeps
+	true
+zdeps:
+	true
+%.o: %.c
+	true
+MAKE
+
 # A repository with more branches than a list can hold, for the branch source:
 # it has to wait for the subcommand to be over, cut to the limit like every
 # other source, and read the refs once per command rather than once per key.
@@ -62,6 +75,12 @@ git init -q $fh/zrepo
 git -C $fh/zrepo -c user.email=t@t -c user.name=t commit -q --allow-empty -m x
 for i in {1..15}; do git -C $fh/zrepo branch zb-$(printf '%02d' $i); done
 git -C $fh/zrepo branch zfeature-a
+# Remote-tracking refs, written directly: a real remote would need a second
+# repository and a fetch, and what the source reads is refs/remotes either way.
+git -C $fh/zrepo update-ref refs/remotes/zorigin/main \
+  "$(git -C $fh/zrepo rev-parse HEAD)"
+git -C $fh/zrepo update-ref refs/remotes/zorigin/HEAD \
+  "$(git -C $fh/zrepo rev-parse HEAD)"
 
 mkdir -p $fh/.config/zsh
 cat > $fh/.config/zsh/.zshrc <<RC
@@ -69,7 +88,7 @@ autoload -Uz compinit; compinit -u -d $fh/compdump
 PROMPT='%% '; RPROMPT=''; unsetopt beep
 HISTFILE=$fh/hist_fixture
 alias zgs='git status -s'
-zstyle ':zhimmer:*' sources history alias command file git-branch
+zstyle ':zhimmer:*' sources history alias command file git-branch git-file make npm-script ssh-host
 PATH=$fh/zbin:\$PATH
 cd $fh
 # A self-insert wrapper that was already there when zhimmer loaded. It
@@ -205,6 +224,19 @@ start
 # reading `git`, which does not contain the history line.
 send "gi"
 check "history outranks the command source for the ghost" 'git status --short --branch'
+stop
+
+# A word of the ghost at a time, the way zsh-autosuggestions takes one on
+# forward-word. Taking a word cannot be seen on the line -- buffer plus ghost
+# reads the same either way -- so the line is run and what the shell actually
+# got is what the assertion looks at.
+start
+send "cat zh"
+send M-f
+check "a partial accept leaves the line looking unchanged" 'cat zhimmer-target-file.txt --verbose'
+send Enter
+refutes "but only the accepted word ran" '--verbose'
+checks  "and the word that was taken did" 'cat zhimmer-target-file.txt'
 stop
 
 # Whatever is left showing when the line is accepted has to be what runs. The
@@ -346,6 +378,40 @@ stop
 start
 send "zg"
 checks "the alias group shows what the alias expands to" 'zgs  →  git status -s'
+stop
+
+# Deciding not to draw is not the same as leaving the screen alone. Deleting a
+# line back to empty left the list for the word that used to be there standing
+# under an empty prompt -- rows describing a buffer that no longer existed.
+start
+send "ca"
+checks "a list is drawn for what was typed" ' history '
+send BSpace
+send BSpace
+refutes "and taken back down when the line is emptied" ' history '
+send "ca"
+checks "and comes back when there is a word again" ' history '
+stop
+
+# The same thing by a route no wrapper covers. ^U is vi-kill-line under viins,
+# which zsh selects whenever EDITOR looks like vi, and naming every widget that
+# can shorten a line is what the redraw guard exists to stop having to do.
+extra_env='EDITOR=nvim'
+start
+send "ca"
+checks "a list is drawn under the vi keymap too" ' history '
+send C-u
+refutes "and ^U takes it down, though no wrapper names vi-kill-line" ' history '
+stop
+extra_env=''
+
+# Nothing typed is not a query. An empty word matched every alias and every
+# executable on $PATH, and put a ghost of whichever sorted first on the line --
+# at stock settings, since two spaces clear min-chars without being a word.
+start
+send "  "
+refutes "an empty word draws no alias group" ' alias '
+refutes "and no command group either" ' command '
 stop
 
 # A query is text, not a pattern. History holds commands with [, * and ~ in
@@ -505,6 +571,28 @@ send "git branch"
 refutes "no branch list while the subcommand itself is being typed" 'zfeature-a'
 send " zfea"
 checks  "branches come once there is an argument to complete" 'zfeature-a'
+stop
+
+# `git push origin main` -- the first argument is a remote, not a branch. The
+# source used to offer branches in both places, which is the one position where
+# being wrong costs something: `git push main` names a remote that is not there
+# and the error comes back from the far end.
+start
+send "cd zrepo"
+send Enter
+send C-l
+send "git push zor"
+checks  "a remote is offered where a remote goes" 'zorigin'
+refutes "and branches are not" 'zb-01'
+stop
+
+# Targets read out of the Makefile, not out of `make -pn`: building make's
+# database runs the makefile's own shell assignments, which is a fork and a
+# side effect for something asked on every keystroke.
+start
+send "make zbu"
+checks  "a make target is offered" 'zbuild'
+refutes "and a pattern rule is not a target" '%.o'
 stop
 
 # Every other source cuts to the limit; this one did not, and a repository with

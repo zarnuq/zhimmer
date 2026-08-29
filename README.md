@@ -50,12 +50,21 @@ ones cannot change the order, and stopping there is what keeps the cost flat.
 Everything else — aliases, `$commands` — already lives in zsh's memory too,
 where filtering in place beats paying a fork.
 
-The two sources that cannot avoid one, `git-branch` and `zoxide`, pay it once
-per command line rather than once per keystroke. Both answer questions that only
-change when something is *run* — a branch created, a directory visited — so the
-answer is cached against `HISTCMD` and re-read on the next prompt. Per keystroke
-those two cost 1.4 ms and 4.4 ms respectively, which is more than ranking ten
-thousand history entries; per command line they cost nothing worth measuring.
+The sources that cannot avoid one — `git-branch`, `git-file`, `zoxide` — pay it
+once per command line rather than once per keystroke. All three answer questions
+that only change when something is *run* — a branch created, a file edited, a
+directory visited — so the answer is cached against `HISTCMD` and re-read on the
+next prompt. Per keystroke `git-branch` and `zoxide` cost 1.4 ms and 4.4 ms,
+which is more than ranking ten thousand history entries; per command line they
+cost nothing worth measuring.
+
+`make`, `npm-script` and `ssh-host` read files rather than run commands, and
+re-read only when the file's mtime moves — a free check through `zsh/stat`,
+which forks nothing. Each parses the file itself rather than asking a tool:
+`make -pn` runs the makefile's own assignments to build its database, and there
+is no JSON parser in zsh worth shelling out to node for. The reading and the
+parsing are separate functions in every case, which is what lets the parsers be
+tested against fixtures in `test/unit.zsh`.
 
 Two ZLE widgets share one generator:
 
@@ -68,7 +77,8 @@ Two ZLE widgets share one generator:
 
 zsh 5.8+. Nothing to compile and nothing to install alongside it: the only
 external commands at runtime are the ones a source is *about* — `git` for the
-branch source, `zoxide` for the zoxide one — and each checks for its own before
+branch and changed-file sources, `zoxide` for the zoxide one — and each checks
+for its own before
 drawing anything, then reads it once per command line rather than once per
 keystroke.
 
@@ -105,6 +115,7 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 | `Esc` | inside the menu, back out of it |
 | `→` `Ctrl+F` | accept the ghost at end of line; move the cursor anywhere else |
 | `Ctrl+E` `End` | accept the ghost; plain end-of-line when there is none |
+| `Ctrl+→` `Alt+→` | accept **one word** of the ghost; plain forward-word when there is none |
 | `Ctrl+Space` | toggle zhimmer on/off (`toggle-key`) |
 
 Nothing is chosen until `Enter`: the menu marks the row it is on rather than
@@ -276,6 +287,30 @@ Sources are tried in the order listed, each becoming its own labelled group.
 Adding one means dropping a `_zhimmer_source_<name>` function into `sources/`
 and naming it in the style.
 
+| source | offers | where |
+|---|---|---|
+| `history` | whole command lines, ranked by frecency | anywhere |
+| `alias` | aliases, with what they expand to | command position |
+| `command` | executables on `$PATH` | command position |
+| `file` | files and directories, globs included | argument position |
+| `git-branch` | local branches; remotes where a remote goes; `origin/main` for merge and rebase | after a git subcommand that takes one |
+| `git-file` | the paths `git status` says have changed | `git add`, `restore`, `rm`, `diff`, `checkout`, `reset`, `stash` |
+| `zoxide` | zoxide's directories, matched anywhere in the path | after `cd` and `z` |
+| `make` | targets from the Makefile | after `make` |
+| `npm-script` | scripts from `package.json` | after `npm run` and the same shape in pnpm, yarn and bun |
+| `ssh-host` | hosts from `~/.ssh/config` and `known_hosts` | after `ssh`, `scp`, `sftp`, `rsync`, `mosh` |
+
+`alias`, `command` and `history` need something typed: with an empty word the
+first two match every alias and every executable on `$PATH`, and history has no
+prefix to rank against. The sources with a command in front of them do not need
+one — `git checkout `, `make `, `ssh ` have already said what the list is of, so
+they offer it with the word still empty.
+
+Two limits are worth knowing. `ssh-host` skips a hashed `known_hosts` — those
+names cannot be read back at all, and a row of base64 is worse than no row.
+`git-branch` names remotes from `refs/remotes`, so a remote you have added but
+never fetched from has no refs to be named by and does not appear.
+
 ### Ghost text
 
 The greyed preview past the cursor is the top row of whatever is on screen, and
@@ -313,7 +348,10 @@ zhimmer-doctor 'git '
 Prints resolved configuration, how much history the ranking can see, the
 candidates for a query with the time both halves of the search cost, and
 warnings for the environment problems that actually break this plugin — a
-missing `compinit`, a conflicting ghost-text plugin.
+missing `compinit`, and any of the plugins that cannot share the mechanisms
+zhimmer works through: zsh-autosuggestions (`POSTDISPLAY`), fzf-tab (`compadd`),
+zsh-autocomplete (the same keys), zsh-abbr (`Space`). Each says what it collides
+with, so the fix is a choice rather than a guess.
 
 The settings it lists come from the same table the code reads, so they cannot
 drift from what is in force, and `styles set` names the completion styles
@@ -325,7 +363,16 @@ configuration had already answered.
 **zsh-autosuggestions** — zhimmer draws ghost text from the same `POSTDISPLAY`
 mechanism, so running both means two plugins fighting over it.
 
-The accept keys are the same ones: `→`, `Ctrl+F`, `Ctrl+E`, `End`.
+The accept keys are the same ones: `→`, `Ctrl+F`, `Ctrl+E`, `End` — and
+`Ctrl+→`/`Alt+→` takes a single word of the suggestion, so `git push --force`
+out of a ghost of `git push --force-with-lease origin feature` is one keypress
+rather than a choice between all of it and none.
+
+Where a word ends is not decided by zhimmer. The line is temporarily made whole,
+suggestion and all, and your own `forward-word` widget is run on it — so
+`WORDCHARS`, vi versus emacs, and any plugin that has taken that widget all
+still decide, and the key answers the same way it would on text that is really
+in the buffer.
 
 It does *not* replace zsh's completion system. `Tab` outside the menu still
 completes subcommands, flags and paths exactly as before, and is deliberately

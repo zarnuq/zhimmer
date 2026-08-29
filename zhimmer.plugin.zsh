@@ -44,6 +44,7 @@ zle -N zhimmer-magic-space .zhimmer-magic-space
 _zhimmer_wrap_self_insert
 _zhimmer_wrap_refresh
 _zhimmer_wrap_accept
+_zhimmer_wrap_accept_word
 _zhimmer_wrap_complete
 
 _zhimmer_tame_lists
@@ -67,7 +68,7 @@ _zhimmer_bindkeys() {
   # guaranteed to be what this terminfo entry names. zsh's own keymap binds both
   # forms for that reason, so zhimmer binds both and whatever terminfo adds on
   # top. (V) writes the terminfo string in the same caret notation bindkey and
-  # _zhimmer_bind_eol read, and an entry the terminal does not have expands to
+  # _zhimmer_bind_motion read, and an entry the terminal does not have expands to
   # nothing rather than to an empty binding.
   zmodload -i zsh/terminfo 2>/dev/null
   local -a down=( '^[[B' '^[OB' ${(V)terminfo[kcud1]} )
@@ -77,7 +78,7 @@ _zhimmer_bindkeys() {
     for k in $btab; do bindkey -M $m $k zhimmer-step-back; done     # Shift+Tab
     [[ -n $tkey ]] && bindkey -M $m $tkey zhimmer-toggle
     bindkey -M $m ' '    zhimmer-magic-space  # Space expands the alias in place
-    _zhimmer_bind_eol $m                      # Ctrl+E / End accept the ghost
+    _zhimmer_bind_motion $m                   # Ctrl+E / End, and Ctrl+Right
   done
   # compinit replaces the completion widgets when it runs, so re-assert that wrap
   # here: sourcing zhimmer before compinit would otherwise lose it. self-insert

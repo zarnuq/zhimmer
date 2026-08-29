@@ -147,22 +147,27 @@ _zhimmer_addgroup() {
 # Rows travel as arguments rather than as the name of an array to read back:
 # `local -a disp` here would shadow a caller's array of the same name, and the
 # group would silently lose its rows.
+# The match list is `matches`, not `words`: `words` is the completion system's
+# own array of the words on the command line, which sources/git-branch.zsh and
+# sources/zoxide.zsh read as $words[1] and $words[2] to decide whether they
+# apply at all. A local of that name here shadows it, so the same expression
+# means the command line two files over and the match list inside this one.
 _zhimmer_addwords() {
   local group=$1 name=$2; shift 2
-  local -a words=( "$@" ) rows=()
+  local -a matches=( "$@" ) rows=()
   local -i sep=$argv[(i)--]
   if (( sep <= $# )); then
-    words=( "${(@)argv[1,sep-1]}" )
+    matches=( "${(@)argv[1,sep-1]}" )
     rows=( "${(@)argv[sep+1,-1]}" )
   fi
-  (( $#words )) || return
-  _zhimmer_take $#words
+  (( $#matches )) || return
+  _zhimmer_take $#matches
   (( _zhimmer_taken )) || return
-  words=( "${(@)words[1,_zhimmer_taken]}" )
+  matches=( "${(@)matches[1,_zhimmer_taken]}" )
   if (( $#rows )); then
     rows=( "${(@)rows[1,_zhimmer_taken]}" )
   else
-    rows=( "${(@)words}" )
+    rows=( "${(@)matches}" )
   fi
 
   # A word source replaces only the current word, so the ghost -- which is
@@ -171,7 +176,7 @@ _zhimmer_addwords() {
   # A candidate that is not an extension of what is typed simply draws no
   # ghost: zoxide matches anywhere in a path, so `z hmr` offers a line that
   # does not begin with `z hmr`, and _zhimmer_ghost drops it.
-  _zhimmer_offer_ghost $name "${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}${words[1]}"
+  _zhimmer_offer_ghost $name "${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}${matches[1]}"
 
   local REPLY
   _zhimmer_header $name; local header=$REPLY
@@ -187,7 +192,7 @@ _zhimmer_addwords() {
   # in a path -- `z hmr` for ~/src/zhimmer -- and none of those survived, and a
   # glob in a filename (`ls ./z*`) left the list empty because `./zalpha` does
   # not start with `./z*`.
-  compadd -l -U -V $group -X $header -d disp -a words
+  compadd -l -U -V $group -X $header -d disp -a matches
 }
 
 # Sort a source's matches and cut them to its limit, in reply. The two steps

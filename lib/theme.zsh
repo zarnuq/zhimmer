@@ -12,6 +12,12 @@ typeset -gA ZHIMMER_COLORS=(
   command    '#89b4fa'
   file       '#fab387'
   git-branch '#a6e3a1'
+  branch     '#a6e3a1'
+  remote     '#94e2d5'
+  changed    '#f38ba8'
+  host       '#89dceb'
+  target     '#f9e2af'
+  script     '#f9e2af'
   zoxide     '#f9e2af'
   # Tab's own groups, named by completion tag once group-name is set.
   files      '#fab387'
