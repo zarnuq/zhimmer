@@ -56,7 +56,7 @@ _zhimmer_source_git-branch() {
   # yet, and matching there asked for branches to replace the word `branch`.
   (( CURRENT > 2 )) || return
   [[ $words[1] == git ]] || return
-  local -i limit=$2
+  local -i limit=$1
   local group=branch
 
   # Decided before anything is read, so an unrelated subcommand costs nothing:

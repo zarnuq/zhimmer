@@ -61,7 +61,7 @@ _zhimmer_make_load() {
 _zhimmer_source_make() {
   (( CURRENT > 1 )) || return
   [[ $words[1] == (make|gmake) ]] || return
-  local -i limit=$2
+  local -i limit=$1
   _zhimmer_make_load
   local -a reply
   _zhimmer_pick $limit ${(M)_zhimmer_make_targets_c:#${(b)PREFIX}*} || return

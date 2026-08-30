@@ -54,7 +54,7 @@ _zhimmer_expand_alias() {
 # Space: expand the word just finished, then insert the space and refresh the
 # menu as a normal keystroke would.
 .zhimmer-magic-space() {
-  _zhimmer_clear_ghost
+  _zhimmer_zle_clear
   _zhimmer_expand_alias
   zle .self-insert
   _zhimmer_maybe_show
@@ -67,6 +67,7 @@ _zhimmer_wrap_acceptline() {
   [[ ${widgets[accept-line]} == user:.zhimmer-accept-line ]] && return
   zle -A accept-line .zhimmer-orig-accept-line
   functions[.zhimmer-accept-line]='
+    _zhimmer_zle_accept && return
     _zhimmer_expand_alias
     zle .zhimmer-orig-accept-line
   '

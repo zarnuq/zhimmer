@@ -17,73 +17,60 @@ _zhimmer_wrap_self_insert() {
 }
 
 .zhimmer-self-insert() {
-  _zhimmer_clear_ghost
+  _zhimmer_zle_clear
   zle .zhimmer-orig-self-insert
   _zhimmer_maybe_show
 }
 
-# Whether zhimmer's own rows are on screen, carried from the last keystroke to
-# this one. Deciding not to draw is not the same as leaving the screen alone:
-# deleting a line back to empty left the list for the word that used to be
-# there standing under an empty prompt, describing a buffer that no longer
-# existed. Every way out of this function now says what becomes of those rows.
-#
-# Only zhimmer's own. A list zsh put there belongs to the completion system,
-# and taking that away on a keystroke is what makes tabbing through a directory
-# impossible -- the same distinction _zhimmer_after_complete draws.
-_zhimmer_drop_rows() {  # <were there any>
-  typeset -g _zhimmer_rows_for=
-  (( $1 )) && zle -R -c
-  return 0
-}
-
+# Deciding not to draw is not the same as leaving the screen alone: deleting a
+# line back to empty left the list for the word that used to be there standing
+# under an empty prompt, describing a buffer that no longer existed. Every way
+# out of this function says what becomes of the rows.
 _zhimmer_maybe_show() {
-  local -i had=$_zhimmer_drew
-  _zhimmer_drew=0
-
-  (( _zhimmer_enabled )) || { _zhimmer_drop_rows $had; return }
+  (( _zhimmer_enabled )) || { _zhimmer_zle_clear; return }
   # Skip while input is still arriving. During fast typing or a paste the result
   # would be discarded by the next keystroke anyway, so this is the cheapest
   # guard available and it matters more than any micro-optimisation inside the
   # generator. The rows stand: the keystroke that ends the burst redraws them,
   # and clearing here would flicker the list away and back on every burst.
-  if (( PENDING || KEYS_QUEUED_COUNT )); then
-    _zhimmer_drew=$had
-    return
+  (( PENDING || KEYS_QUEUED_COUNT )) && return
+  # min-chars is about not answering a question nobody asked -- two characters
+  # into a line, a suggestion is a guess. A search *is* the question, so it is
+  # answered from the first keystroke, and from none at all: Ctrl+R on an empty
+  # line means "everything, best first".
+  if (( ! _zhimmer_search )); then
+    local REPLY; _zhimmer_cfg min-chars
+    (( ${#LBUFFER} >= REPLY )) || { _zhimmer_zle_clear; return }
   fi
-  local REPLY; _zhimmer_cfg min-chars
-  (( ${#LBUFFER} >= REPLY )) || { _zhimmer_drop_rows $had; return }
 
   # Cleared before the groups are drawn, since each one offers its top row as
   # the redraw goes and the rank decides between them.
   typeset -g _zhimmer_top=
   typeset -gi _zhimmer_top_rank=0
-  # Recorded before the draw, not after: listing does not touch the buffer, and
-  # the redraw the draw itself provokes would otherwise see rows attributed to
-  # whatever was on screen last and take them straight back down.
-  typeset -g _zhimmer_rows_for=$BUFFER
+  # Recorded before the draw, not after: gathering does not touch the buffer,
+  # and the redraw the draw itself provokes would otherwise see a display
+  # attributed to whatever was on screen last and take it straight back down.
+  typeset -g _zhimmer_shown_for=$BUFFER
+  # The gather runs inside the `zle -C` widget, for $words and $PREFIX; the
+  # rows and the ghost are then drawn in one pass, since both are POSTDISPLAY
+  # and the ghost sits on the line above the list.
   zle zhimmer-show
-  # Every source may have declined -- an empty word, or nothing matching what
-  # is typed -- and the rows from the last keystroke are still up if so.
-  (( _zhimmer_drew )) || _zhimmer_drop_rows $had
-  _zhimmer_ghost
+  _zhimmer_zle_show
 }
 
-# Down opens the menu, but only when there is something to show -- otherwise it
-# has to keep behaving like plain history navigation, which is muscle memory.
+# Down and Up move the selection over the rows that are already drawn, and fall
+# through to plain history navigation when there are none -- which is muscle
+# memory, and what the keys do everywhere else. There is no mode to enter:
+# _zhimmer_zle_move only moves an index, and wraps, so from nothing Down lands
+# on the first row and Up on the last.
 .zhimmer-down() {
-  # menuselect inserts the highlighted match into the buffer itself, so a ghost
-  # left over from typing would be redrawn after it -- showing the tail of the
-  # suggestion twice.
-  _zhimmer_clear_ghost
-  # Down walks into whatever was last drawn (_zhimmer_drew, declared in
-  # complete.zsh), not into a fresh question put to the matcher: the list on
-  # screen is exactly what Down should open.
-  if (( _zhimmer_enabled && _zhimmer_drew )); then
-    zle zhimmer-menu
-  else
-    zle .down-line-or-history
-  fi
+  (( _zhimmer_enabled )) && _zhimmer_zle_move 1 && return
+  zle .down-line-or-history
+}
+
+.zhimmer-up() {
+  (( _zhimmer_enabled )) && _zhimmer_zle_move -1 && return
+  zle .up-line-or-history
 }
 
 # Shift+Tab steps back up through the matches Tab is stepping down through.
@@ -116,6 +103,28 @@ _zhimmer_note_menu() {
   _zhimmer_note_menu
 }
 
+# Ctrl+R: search the history by substring rather than by prefix. The ranking,
+# the rows and the keys are the ones already here -- what changes is where the
+# query is allowed to match, so this is a mode on the existing drop-down rather
+# than a second one. Pressed again it steps to the next match, which is what
+# the key does in zsh's own incremental search and in fzf.
+#
+# A row is kept selected for as long as a search is open (see
+# _zhimmer_zle_show), so Enter always has something to take. With zhimmer
+# switched off the key still has to do what it always did.
+.zhimmer-search() {
+  if (( ! _zhimmer_enabled )); then
+    zle .history-incremental-search-backward
+    return
+  fi
+  if (( _zhimmer_search )); then
+    _zhimmer_zle_move 1
+    return
+  fi
+  _zhimmer_search=1
+  _zhimmer_maybe_show
+}
+
 .zhimmer-toggle() {
   _zhimmer_enabled=$(( ! _zhimmer_enabled ))
   # Say so. Off, zhimmer draws nothing at all, which looks exactly like it being
@@ -125,7 +134,7 @@ _zhimmer_note_menu() {
   if (( _zhimmer_enabled )); then
     _zhimmer_maybe_show
   else
-    zle -R -c
+    _zhimmer_zle_clear
     local REPLY; _zhimmer_cfg toggle-key
     [[ $REPLY == '^@' ]] && REPLY='Ctrl+Space'   # the default, said readably
     zle -M "zhimmer off -- $REPLY turns it back on"
@@ -161,7 +170,7 @@ _zhimmer_wrap_refresh() {
     # Only wrap builtins: `zle .$w` would bypass another plugin's wrapper.
     [[ ${widgets[$w]} == builtin ]] || continue
     functions[.zhimmer-refresh-$w]="
-      _zhimmer_clear_ghost
+      _zhimmer_zle_clear
       zle .$w
       _zhimmer_maybe_show
     "
@@ -259,10 +268,7 @@ _zhimmer_wrap_complete() {
 # Run one completion with zhimmer's rows out of the way and its display strings
 # in place, then decide what the listing area is left showing.
 _zhimmer_after_complete() {  # <saved-widget>
-  if (( _zhimmer_drew )); then
-    zle -R -c
-    _zhimmer_drew=0
-  fi
+  _zhimmer_zle_clear
   _zhimmer_style_matches
   { zle $1 } always { _zhimmer_unstyle_matches }
   (( ${_lastcomp[nmatches]:-0} == 1 )) && _zhimmer_maybe_show
@@ -304,39 +310,20 @@ _zhimmer_bind_motion() {
   return 0
 }
 
-# Inside the menu: Enter takes the highlighted row, Esc backs out, and Tab and
-# the arrows walk the list. Tab moves rather than accepts, because the row the
-# cursor is on is not chosen until Enter -- stepping through a list and picking
-# from it are two gestures, and only one of them should end the menu.
-#
-# Typing narrows the list instead of ending it (type-to-filter, switched on in
-# complete.zsh and tabstyle.zsh). complist calls that interactive mode, and it
-# drops out of it the moment a key moves the selection -- which would quietly
-# turn the next character typed back into "accept this row, then insert it",
-# the behaviour the mode exists to avoid. So every movement key is a two-key
-# macro: move, then vi-insert, which is complist's own toggle back into
-# interactive mode. The primitives it is built from are bound under a prefix
-# nobody presses, since pressing one of them on its own would leave the mode.
+# Inside Tab's menu -- complist's menuselect keymap, which zhimmer's own menu
+# never enters. Esc backs out, and backspace has to be named here even though
+# the main keymap already has it: complist reads it as "take a character back
+# off the word" only while the key is bound to the builtin, and zhimmer rebinds
+# it to refresh the drop-down. That made backspace leave the menu instead,
+# accepting whichever row it was on as it went.
 _zhimmer_bind_menuselect() {
   bindkey -M menuselect '^[' send-break
-  # Backspace has to be named here, though the main keymap already has it:
-  # complist reads it as "take a character back off what I am filtering on"
-  # only while the key is bound to the builtin, and zhimmer rebinds it to
-  # refresh the ghost. That made backspace leave the menu instead, accepting
-  # whichever row it was on as it went.
   bindkey -M menuselect '^?' backward-delete-char
   bindkey -M menuselect '^H' backward-delete-char
-
-  if ! _zhimmer_bool type-to-filter; then
-    bindkey -M menuselect '^I' accept-line   # Tab accepts; nothing filters
-    return 0
-  fi
-
-  bindkey -M menuselect '^X^N' down-line-or-history
-  bindkey -M menuselect '^X^P' up-line-or-history
-  bindkey -M menuselect '^X^F' vi-insert
-  local k
-  for k in '^[[B' '^[OB' '^I'   '^N'; do bindkey -M menuselect -s $k '^X^N^X^F'; done
-  for k in '^[[A' '^[OA' '^[[Z' '^P'; do bindkey -M menuselect -s $k '^X^P^X^F'; done
+  # Tab walks the menu forward on its own; Shift+Tab has no default binding
+  # there at all, so it fell through to the main keymap -- which ended menu
+  # selection, took whichever row it was on, and completed a *second* word from
+  # the key. The two keys have to move in opposite directions through one list.
+  bindkey -M menuselect '^[[Z' reverse-menu-complete
   return 0
 }

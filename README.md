@@ -16,9 +16,11 @@ git cherry-pick abc123
 
 ## How it works
 
-The menu is drawn by zsh's own `zsh/complist`, fed through `compadd`. That is
-deliberate: scrolling, terminal resize, multiplexers and redraw are already
-solved there, and reimplementing them is where comparable tools accumulate bugs.
+The menu is drawn by zhimmer, into `POSTDISPLAY`, with `region_highlight` for
+the colour. It went through zsh's own `zsh/complist` for a while and does not
+any more — see [the drop-down](#the-drop-down) for why, which comes down to one
+thing complist cannot do: filter an open menu without flickering. complist is
+still loaded, because it is what draws `Tab`'s listing.
 
 History matching is zsh's own, and never forks. `${history[(R)pattern]}`
 searches the parameter in place, newest match first, without expanding tens of
@@ -66,12 +68,12 @@ is no JSON parser in zsh worth shelling out to node for. The reading and the
 parsing are separate functions in every case, which is what lets the parsers be
 tested against fixtures in `test/unit.zsh`.
 
-Two ZLE widgets share one generator:
-
-- `zhimmer-show` (`list-choices`) draws the list without touching the buffer, so
-  it can run on every keystroke without blocking.
-- `zhimmer-menu` (`menu-select`) hands off to the `menuselect` keymap for arrow
-  navigation.
+One ZLE widget gathers the candidates — `zhimmer-show`, a `zle -C ...
+list-choices` — and it adds nothing through `compadd`. What it is *for* is the
+completion context: the completion system is what splits the line into `$words`
+and hands a source its `$PREFIX` and `$CURRENT`, which is how each one decides
+whether it applies at all. The rows it gathers are drawn separately, so the
+widget never touches the buffer and can run on every keystroke.
 
 ## Requirements
 
@@ -116,12 +118,13 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 | `→` `Ctrl+F` | accept the ghost at end of line; move the cursor anywhere else |
 | `Ctrl+E` `End` | accept the ghost; plain end-of-line when there is none |
 | `Ctrl+→` `Alt+→` | accept **one word** of the ghost; plain forward-word when there is none |
+| `Ctrl+R` | search the history by substring; pressed again, step to the next match (`search-key`) |
 | `Ctrl+Space` | toggle zhimmer on/off (`toggle-key`) |
 
 Nothing is chosen until `Enter`: the menu marks the row it is on rather than
-writing it into the line, so `Tab`, the arrows and typing all leave what you
-typed alone until you take a row. Set `type-to-filter` to `no` for the older
-arrangement, where the menu inserts as it moves and `Tab` accepts.
+writing it into the line, so the arrows and typing leave what you typed alone
+until you take a row. There is no mode to be in — the arrows move an index and
+wrap at both ends, which is also how `↑` opens the menu from nothing.
 
 `Esc` is deliberately not bound outside the menu: it is zsh-vi-mode's
 normal-mode switch and it prefixes every arrow-key escape sequence.
@@ -144,6 +147,15 @@ into an array. `_describe` passes `-D` and keeps its descriptions there, so
 probing with it ran that filter a second time and left `git` completion with
 nothing at all. Set `style-completion` to `no` to hand the drawing back to
 complist.
+
+`Tab`'s menu is plain zsh menu selection, not zhimmer's. It walks by inserting
+each match into the line, and typing at it accepts the highlighted row rather
+than narrowing — conventional `menu-complete` behaviour, and what you get
+without `interactive`, which is deliberately not asked for. complist draws a
+hardcoded `interactive: []` row for the whole time that mode is on and drops
+out of the mode on every movement key, so asking for it bought that row and
+little else once zhimmer's own drop-down filtered natively. Narrowing still
+works the way it always did: keep typing, and zhimmer's list follows.
 
 Both zhimmer and zsh's completion draw into the same area under the prompt, and
 Tab belongs to completion. So Tab clears zhimmer's rows before completing —
@@ -173,6 +185,116 @@ switch got hit by accident, and a disabled zhimmer draws nothing at all, which
 looks exactly like a broken one. Turning it off now says so; set `toggle-key`
 to rebind it, or to an empty string to leave the switch unbound.
 
+### The drop-down
+
+zhimmer draws its own menu, into `POSTDISPLAY`, with `region_highlight` for the
+colour. It used to be complist's, fed through `compadd`, which was worth trying:
+scrolling, resize and redraw are already solved there. It went because of one
+thing complist cannot do — **filter an open menu without flickering.**
+
+complist's interactive mode is what filters, it resets that mode on every
+movement key (`mode = 0` in each mover in `Src/Zle/complist.c`), and it draws a
+hardcoded `interactive: []` row while the mode is on. Keeping the mode alive
+across an arrow press therefore costs a `move, then vi-insert` macro that
+removes and reinserts a screen row on every keypress, shifting the list under
+the cursor. There is no way around it from outside: the `menu-complete` family
+is the only command that preserves the mode, and in that mode it does not move
+the selection at all.
+
+Drawing it here removes the question instead of answering it. **There is no menu
+mode to be in**: typing narrows the list because typing already recomputes it,
+the arrows only move an index, and nothing toggles. No `interactive: []`, no
+shifting, and the command line keeps its syntax highlighting because the display
+is never handed to complist. It is also less to write — 491 bytes a keystroke
+against complist's 2927.
+
+The other half is that `region_highlight` colours by character *offset*, so an
+escape is never counted as width — the constraint that keeps colour out of a
+`compadd` display string. Rows are plain text and colour is applied over them.
+Widths are read at draw time, so a terminal resize is picked up by the next
+keystroke without anything being regenerated.
+
+Nothing is written into the line until `Enter`: the bar marks a row, and the
+ghost follows the selection so `→` and `Enter` never promise different lines.
+
+The trade is cost. The rows are built in zsh where complist built them in C —
+2.0–3.0 ms a keystroke at ten rows against complist's 1.3–1.7, and 5.3 ms
+against 3.3 at thirty-five — but both sit inside the ~10 ms a keystroke has.
+
+complist keeps two jobs either way: `Tab`'s completion menu, which belongs to
+zsh's completion system, and long completion listings (`tame-lists`).
+
+### Searching (Ctrl+R)
+
+`Ctrl+R` moves the anchor. The drop-down normally matches what you have typed
+at the *start* of a remembered line; in a search it matches anywhere in one, so
+`commit` finds `git commit --amend`. Everything after the match is the same
+code — the same frecency ranking, the same rows, the same keys — which is the
+point: searching is one flag on the machinery that was already there, not a
+second mechanism beside it.
+
+That means no fork, no subshell and no external binary, which is what it
+replaces: `bindkey -r '^R'` after fzf's own setup and this takes the key.
+
+With zsh-vi-mode loaded, note that it binds `^R` to
+`history-incremental-search-backward` inside its own init, which by default
+runs at the first precmd — after every plugin has been sourced. zhimmer binds
+its keys at load time *and* again from `zvm_after_init_commands` for that
+reason; if `Ctrl+R` gives you `bck-i-search`, that second pass is what did not
+happen.
+
+```
+$ commit
+search
+git commit -m "second"
+git commit --amend
+git commit -m "first"
+```
+
+The header says `search` rather than `history`, which is the only thing on
+screen that distinguishes the two — including when there is nothing to show,
+where it reads `search: no match` rather than leaving a bare line.
+
+- **The order is your history's, newest first** — not the drop-down's frecency
+  order. That is what the key has always meant, in fzf and in zsh's own
+  `bck-i-search` alike: you are looking for a thing you ran, and *when* is how
+  you remember it. Frecency belongs to the drop-down, where there is no
+  question yet; applied to a search it hides this morning's command behind one
+  from last year that you type every day.
+- Duplicates collapse to their newest occurrence, and `search-suggestions`
+  rows (100 by default) are kept, so the window scrolls under them. A history
+  is mostly repeats and four screens of `ls` is not a search result. Lines
+  differing only in trailing whitespace are different lines and both show.
+- On an empty line it opens on the whole history. `min-chars` does not apply:
+  it exists so a suggestion is not a guess two characters into a line, and a
+  search *is* the question.
+- A row is always selected while a search is open, so `Enter` always has one to
+  take. `Ctrl+R` again steps to the next match, as it does in zsh's own
+  incremental search.
+- History is the only source asked. Offering the files in this directory beside
+  the remembered lines containing what you typed is two searches sharing a
+  screen.
+- There is no ghost text, and nothing enforces that: a candidate that merely
+  *contains* what you typed does not extend it, so the existing rule drops it.
+  On an empty line it does show the selected row, since everything extends
+  nothing.
+- `Ctrl+C` abandons it. The mode is also cleared at `line-init`, not only at
+  `line-finish` — `Ctrl+C` never reaches the latter, and a search left on
+  leaked into the next line.
+
+The cost is the anchor. A leading `*` cannot use the prefix to stop early:
+
+| | 8,500 entries |
+|---|---|
+| prefix `git` | 1.1 ms |
+| substring `git` | 2.2 ms |
+| whole history (empty `Ctrl+R`) | 3.9 ms |
+
+All three are one deliberate keypress, and typing on narrows the previous match
+set rather than searching again — the same trick the prefix path uses. The mode
+is part of what that cache is keyed on, because lines *containing* `git` and
+lines *starting with* it are not subsets of each other.
+
 ### Long lists
 
 `tame-lists` (on by default) decides what a completion listing does once it
@@ -186,8 +308,8 @@ the same setting also sets `menu select`, which hands the matches to menu
 selection instead. The arrows and `Tab` walk it, it scrolls under them, `Enter`
 takes the row the cursor is on and `Esc` backs out: the menu `↓` opens, reached
 from `Tab`, with the line being edited still above it rather than pushed off the
-top. The count and position underneath come from the same `MENUPROMPT`, which
-the completion system replaces only when a `select-prompt` style is set.
+top. The count and position underneath come from `select-prompt`, set to match
+`list-prompt` so a scrolled menu says the same thing a scrolled listing does.
 
 Plain `select`, not `select=long`. A short list fits on screen, but fitting is
 not the same as having nothing to choose from: with selection only on the long
@@ -197,35 +319,24 @@ only ever list, like `Ctrl+D`, where there is nothing to select into.
 
 ### Typing at an open menu
 
-`type-to-filter` (on by default) is the other half of that. Without it the first
-character typed at an open menu accepts whichever row the cursor happens to be
-on and types after it — `ls /etc/<Tab>a` left `ls /etc/acpi/a`, a directory
-nobody asked for. With it, typing narrows the list to what still matches,
-backspace widens it again, and the row is taken only by `Enter`.
+Typing narrows the list to what still matches, backspace widens it again, and
+the row is taken only by `Enter`. This needs no mode and no setting: a keystroke
+already recomputes the list, and the menu is only an index into whatever that
+produced. Moving the selection and narrowing it are the same two mechanisms they
+are when the menu is closed.
 
-zsh calls this menu selection's *interactive mode*, and it is switched on in
-two places, because zhimmer has two menus: through the `menu` style for Tab's,
-and on `MENUMODE` for `↓`'s, which is a raw `zle -C` widget and so never goes
-through the completion system.
-
-complist drops out of interactive mode the moment a key moves the selection,
-which would quietly turn the next character typed back into *accept this row,
-then insert it*. So inside the menu every movement key is bound to a two-key
-macro — move, then `vi-insert`, which is complist's own toggle back into the
-mode. Backspace is bound there too: complist reads it as *take a character back
-off what I am filtering on* only while the key is bound to the builtin, and
-zhimmer rebinds it to refresh the ghost, which made backspace leave the menu
-instead, accepting a row on the way out.
-
-Set `type-to-filter` to `no` to get the plain menu back: the selection is
-inserted as it moves, `Tab` accepts, and typing ends the menu.
+That is the whole reason the drop-down is drawn here rather than by complist.
+zsh calls the equivalent menu selection's *interactive mode*, and it costs a
+`interactive: []` row on screen, a shifting list on every arrow, and a flattened
+command line for as long as the menu is open.
 
 ### Colours and what is left alone
 
-`list-colors` gets `ma=` from the same `ZHIMMER_SELECT` as zhimmer's own menu.
-Inside the completion system `ZLS_COLORS` is rebuilt from that style for the
-duration of the completion, so without it Tab's selected row falls back to
-reverse video while `↓`'s is a solid bar.
+`list-colors` gets `ma=` so `Tab`'s selected row is the same bar zhimmer's own
+menu paints, rather than falling back to reverse video. It goes on the style
+and not on `ZLS_COLORS` because inside the completion system that parameter is
+rebuilt from the style for the duration — one of the reasons the drop-down
+stopped going through complist at all.
 
 Set `tame-lists` to `no` to leave all of it alone. A style already set by hand
 — `menu`, `list-colors`, `list-prompt`, `group-name` — is never overridden, on
@@ -236,15 +347,16 @@ whatever context pattern it was written.
 ```zsh
 zstyle ':zhimmer:*' sources         history alias command file git-branch zoxide
 zstyle ':zhimmer:*' max-suggestions 10
-zstyle ':zhimmer:*' menu-suggestions 50
 zstyle ':zhimmer:*' min-chars       2
 zstyle ':zhimmer:*' ghost-text      yes
 zstyle ':zhimmer:*' ghost-color     'fg=#6c7086'
 zstyle ':zhimmer:*' expand-alias    yes
 zstyle ':zhimmer:*' tame-lists      yes
-zstyle ':zhimmer:*' type-to-filter  yes
+zstyle ':zhimmer:*' row-colors      yes
 zstyle ':zhimmer:*' style-completion yes
 zstyle ':zhimmer:*' toggle-key      '^@'
+zstyle ':zhimmer:*' search-key      '^R'
+zstyle ':zhimmer:*' search-suggestions 100
 ```
 
 ### Appearance
@@ -257,31 +369,62 @@ and truncated with `…` rather than wrapping.
 ZHIMMER_COLORS[history]='#6c7086'      # per-source header colour
 ZHIMMER_COLORS[alias]='#cba6f7'
 ZHIMMER_RULE_COLOR='#313244'
-ZHIMMER_SELECT='48;2;69;71;90;1'       # selected row (raw SGR, ZLS_COLORS ma=)
+ZHIMMER_SELECT_BG='#45475a'            # the selected row's bar
 ```
 
 Defaults are Catppuccin Mocha, picked to match the prompt colours in the
 author's `.zshrc`.
 
-Colour lives on headers and the selection, not on row text: `compadd -X` honours
-prompt escapes (including truecolor `%F{#rrggbb}`), but display strings are laid
-out by width, so escapes inside them are not reliable.
+Row text carries one accent: the first token — the command in a history line,
+the name of an alias, the branch or host or target a source is about — in that
+source's colour. Arguments stay plain, which keeps a row scannable and keeps
+this from turning into a second, worse syntax highlighter.
 
-`max-suggestions` is capped at what the terminal can actually show. complist does
-not paginate a raw `zle -C` listing, so an over-long list scrolls the prompt off
-the top and takes the earliest candidates with it; zhimmer clamps to
-`$LINES - 5` instead.
+```zsh
+ZHIMMER_ROW_COLORS[history]='#a6e3a1'   # the command word, in command-green
+ZHIMMER_ROW_COLORS[file]='#fab387'
+zstyle ':zhimmer:*' row-colors no       # plain rows
+```
 
-The menu `↓` opens is under no such limit: menu selection scrolls, so it holds
-`menu-suggestions` per source (50 by default) and you walk down into the rest,
-with the prompt still above and `12/50 matches -- at 24%` below. A listing has
-to fit; a menu only has to be reachable. Scrolling comes from the `MENUPROMPT`
-and `MENUSCROLL` parameters rather than the `select-prompt` and `select-scroll`
-styles, for the same reason as `ZLS_COLORS`: a raw `zle -C` widget never goes
-through the completion system.
+That accent is painted with `region_highlight`, which works in character
+offsets, never written into the row text. This is the constraint the whole
+drop-down is shaped around: escapes put in a string that something else lays
+out do render, but the layout measures the string it was given and counts the
+escape bytes as width, so a padded row comes up short and a long one truncates
+early. Colouring by offset cannot have that problem.
 
-`↓` opens whatever list is on screen, whichever source drew it — a directory
-with 400 entries gets the same bounded, scrolling menu as a five-entry one.
+`sudo openvpn …` puts the command in second place, so a rule that only ever
+paints the first token leaves the word you were looking for plain. The words
+that take a command as their argument are known, and the token after one of
+them is highlighted as the command instead — with the precommand itself
+underlined, which is how zsh-syntax-highlighting marks it on the line above.
+
+```zsh
+ZHIMMER_ROW_PRECOMMANDS=( sudo doas su env command nohup … )
+ZHIMMER_ROW_PRECOMMAND_COLOR='4;#a6e3a1'   # the `4;` is the underline
+```
+
+The accent is keyed by the source's **group** (`git-branch`), not by the label
+its header is drawn under (`branch`) — those are different words for six of the
+eleven sources, and looking a row up by its label returns nothing at all,
+silently, since a missing key in a zsh hash is an empty string rather than an
+error. `test/unit.zsh` reads the pairs back out of `sources/*.zsh` and checks
+both tables cover them, which is the check that catches a source added without
+a colour.
+
+Group headers still take the colour they always did, and the selected row is
+still a solid bar — the accent gives way to it rather than fighting it.
+
+zsh-syntax-highlighting is untouched by any of this and still owns the command
+line, including while the menu is open — which it did not when the menu was
+complist's, since interactive mode took the line over and flattened its colours
+until you left. Both write `region_highlight` now, so zhimmer tags every entry
+it adds with `memo=zhimmer` and only ever removes its own.
+
+`max-suggestions` is capped at what the terminal can actually show — `$LINES -
+5`, shared across every group rather than applied per source, since six sources
+at ten each is sixty rows and the prompt would go off the top. `↓` opens
+whatever is on screen, whichever source drew it.
 
 Sources are tried in the order listed, each becoming its own labelled group.
 Adding one means dropping a `_zhimmer_source_<name>` function into `sources/`
@@ -338,6 +481,99 @@ to edit before it runs. It fires on `Space` and `Enter`. Command aliases expand
 only in command position (zsh's own rule); global aliases expand anywhere; and
 chains (`gcm` → `gc` → `git commit`) resolve one step at a time. Set the style
 to `no` to turn it off.
+
+## Prompt
+
+Off by default. zhimmer is loaded for its menu, and taking over the prompt of
+everyone who does that is not a trade they agreed to.
+
+```zsh
+zstyle ':zhimmer:*' prompt yes
+```
+
+```
+ ~/zhimmer feat/menu !?⇡1
+ >
+```
+
+Directory, branch, what the working tree looks like, and a `>` that turns red
+when the last command failed. Two lines, no blank line above them.
+
+It is split by what things cost. Everything knowable without a fork — the
+directory, the branch, the exit status — is drawn immediately, in **0.07 ms**.
+The one thing that is not, the working-tree status, is fetched in the
+background and the prompt redraws when it arrives. So the prompt appears at the
+same speed everywhere, and a slow repository delays a few symbols rather than
+the shell.
+
+That split is the whole design, because `git status` is not slow in the
+abstract — it is 1.5 ms in a small repository and 67 ms in one with 94,000
+tracked files, and a prompt that blocks on it is fine right up until the day it
+is not.
+
+The branch needs no git at all. `.git/HEAD` is a line of text naming the ref:
+
+| how | cost |
+|---|---|
+| read `.git/HEAD` | **0.01 ms** |
+| `git symbolic-ref --short HEAD` | 1.0 ms |
+| `vcs_info` | 16.75 ms |
+
+Almost every prompt in the wild pays one of the latter two for an answer sitting
+in a file. A `.git` that is a *file* rather than a directory — a linked worktree
+or a submodule — is followed to the directory it names, and a detached HEAD
+reads as the short sha.
+
+One `git status --porcelain=v1 --branch` answers everything else: every status
+column and the distance from upstream, in a single fork. For comparison, Pure
+spends five forks and about 89 ms per prompt on the same question, most of it
+because `vcs_info` is asked for the branch separately.
+
+### Symbols
+
+Spaceship's, because they are the ones people already read.
+
+| | |
+|---|---|
+| `?` | untracked | 
+| `+` | staged |
+| `!` | modified |
+| `»` | renamed |
+| `✘` | deleted |
+| `=` | unmerged |
+| `⇡3` `⇣2` | ahead of / behind upstream |
+
+Divergence is both arrows rather than a `⇕` of its own, which says the same
+thing and drops the two numbers to do it. A branch with no upstream shows no
+arrows at all — that is not the same as being level with one.
+
+```zsh
+ZHIMMER_PROMPT_SYMBOLS[modified]='*'
+ZHIMMER_PROMPT_ORDER=( unmerged deleted renamed modified staged untracked )
+ZHIMMER_PROMPT_COLORS[branch]='#cba6f7'
+ZHIMMER_PROMPT_SYMBOL=' >'
+```
+
+### Switching it off
+
+```zsh
+zhimmer-prompt-off      # puts back the prompt that was there when it was turned on
+zhimmer-prompt-on
+```
+
+The prompt in force when it was switched on is saved and restored verbatim, so
+this can be turned on and off next to Pure or starship without either of them
+losing anything. `zhimmer-doctor` warns when one of them is loaded *and* this is
+on, since the last one to set `PROMPT` wins.
+
+Set `prompt-async` to `no` to compute the symbols in the foreground instead. The
+prompt then blocks for as long as `git status` takes, which in a small
+repository is not measurable and in a large one is the 67 ms above.
+
+Two things are deliberately not here. Exec time, which Pure shows, is cheap to
+add — it is arithmetic on `EPOCHSECONDS`, no fork — but nobody asked for it.
+And the stash count, which cannot come from `git status` and would cost a second
+fork for a character.
 
 ## Diagnostics
 

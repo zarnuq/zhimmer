@@ -54,7 +54,7 @@ _zhimmer_source_npm-script() {
   # itself: at `npm run` there is no script argument yet.
   (( CURRENT > 2 )) || return
   [[ $words[1] == (npm|pnpm|yarn|bun) && $words[2] == (run|run-script) ]] || return
-  local -i limit=$2
+  local -i limit=$1
   _zhimmer_npm_load
   local -a reply
   _zhimmer_pick $limit ${(M)_zhimmer_npm_scripts_c:#${(b)PREFIX}*} || return

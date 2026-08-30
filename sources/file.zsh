@@ -3,7 +3,7 @@
 _zhimmer_source_file() {
   # An empty current word would glob the whole directory into the menu.
   (( CURRENT > 1 )) && [[ -n $PREFIX ]] || return
-  local -i limit=$2
+  local -i limit=$1
 
   # `~` does not expand inside a parameter's value, so globbing $PREFIX directly
   # matched nothing at all for `~/Doc` -- every path under home came up empty

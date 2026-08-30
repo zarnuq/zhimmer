@@ -105,11 +105,6 @@ _zhimmer_unstyle_matches() {
 # screen saying which row that was. The list-prompt stays for the widgets that
 # only ever list (^D), where there is nothing to select into.
 #
-# `interactive` is the answer to the other half of it: without it, the first
-# character typed at an open menu accepts whatever row the cursor happens to be
-# on and types after it -- `ls /etc/<Tab>a` gave `/etc/acpi/a`. With it, typing
-# narrows the list and nothing is chosen until Enter.
-#
 # A style the user has already set always wins, so the whole zstyle table is
 # read once and asked what it defines. `zstyle -L <context> <style>` would
 # answer for one context pattern only, and a value set on ':completion:*:*:*:*:*'
@@ -136,18 +131,25 @@ _zhimmer_tame_lists() {
   # way, spaces or not: the colour is 'ma=48;2;69;71;90;1', and a bare ; is
   # where the shell would end a command, so unquoted it split into six values
   # and the selected row lost its colour.
-  local filter=; _zhimmer_bool type-to-filter && filter=' interactive'
+  # Deliberately not `menu select interactive`. Interactive mode is what makes
+  # typing at an open menu narrow it, and zhimmer's own drop-down does that
+  # natively -- but complist draws a hardcoded `interactive: []` row for the
+  # whole time the mode is on, and drops out of the mode on every movement key.
+  # Asking for it here bought that row on Tab's menu and nothing else.
   local -a want=(
     # Group the matches by tag, so the headers zhimmer draws over them read
     # "files", "options", "branches" rather than zsh's internal -default-.
     "group-name ''"
     "list-prompt ${(q)ZHIMMER_LIST_PROMPT}"
-    "menu select$filter"
-    # The selected row. Inside the completion system ZLS_COLORS is rebuilt from
-    # the list-colors style for the duration of the completion, so the ma= set
-    # in theme.zsh -- which is what zhimmer's own menu selects with -- never
-    # reaches Tab's, and the row falls back to reverse video. Same colour, said
-    # again in the place compsys reads.
+    # The same count and position under a menu that has scrolled. Without it
+    # zsh falls back to its own wording, which says "Scrolling active" where
+    # the line above says how many matches there are.
+    "select-prompt ${(q)ZHIMMER_SELECT_PROMPT}"
+    "menu select"
+    # The selected row, in the place compsys reads: inside a completion,
+    # ZLS_COLORS is rebuilt from this style for the duration, so setting the
+    # parameter directly would not survive to reach Tab's menu. It is the same
+    # colour zhimmer's own menu paints its bar with -- see ZHIMMER_SELECT_BG.
     "list-colors ma=${(q)ZHIMMER_SELECT}"
   )
 

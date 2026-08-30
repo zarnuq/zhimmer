@@ -12,33 +12,75 @@
 # query, and the matches for a longer query are a subset of the ones already in
 # hand -- so the search runs once per word rather than once per keystroke.
 # HISTCMD guards it: a command run since means an entry that was never searched.
-typeset -g _zhimmer_hist_q= _zhimmer_hist_at=
+#
+# The shape of the question is part of the key too. Lines *containing* `git com`
+# are a subset of lines containing `git`, and lines *starting with* one are a
+# subset of lines starting with the other -- but neither set is a subset of the
+# other, so narrowing across a change of mode would answer from the wrong list.
+typeset -g _zhimmer_hist_q= _zhimmer_hist_at= _zhimmer_hist_sub=0
 typeset -ga _zhimmer_hist_m=()
 
 # Rank the history for <query>, best first, into reply. Split from the source
 # below so zhimmer-doctor can ask the same question from outside a completion
 # widget, where compadd does not exist.
-_zhimmer_hist_rank() {  # <query> <limit>
+#
+# <substring> is what Ctrl+R turns on: the query matches anywhere in a line
+# rather than only at its start. Everything after the match is the same ranking
+# either way -- searching is not a different feature, only a different anchor.
+_zhimmer_hist_rank() {  # <query> <limit> [<substring>] -> reply
   local q=$1
-  local -i limit=$2
+  local -i limit=$2 sub=${3:-0}
   typeset -ga reply=()
   # A line of nothing but whitespace is as empty as an empty one: it is not a
   # prefix anybody is searching for, and ranking against it offered whatever
-  # happened to be at the top of the history.
-  [[ -n ${q//[[:space:]]/} ]] || return
+  # happened to be at the top of the history. A search is the exception -- an
+  # empty one asks for everything, best first, which is what Ctrl+R opens on.
+  (( sub )) || [[ -n ${q//[[:space:]]/} ]] || return
+
+  # (b) quotes the query as a literal: a `[` or `*` typed at the prompt is a
+  # character to match, not a pattern to run. The pattern is built in a
+  # parameter and used with $~, since the anchor is now decided at runtime --
+  # without the ~ the value is matched as a literal string, wildcards and all.
+  local pat="${(b)q}*"
+  (( sub )) && pat="*$pat"
 
   # Kept in the cache rather than copied out of it: at ten thousand entries a
   # `git ` search matches thousands of them, and one array copy per keystroke
   # is more than the search that produced it.
-  if [[ -n $_zhimmer_hist_q && $_zhimmer_hist_at == $HISTCMD && $q == ${_zhimmer_hist_q}* ]]; then
-    _zhimmer_hist_m=( ${(M)_zhimmer_hist_m:#${(b)q}*} )
+  if [[ -n $_zhimmer_hist_q && $_zhimmer_hist_at == $HISTCMD \
+        && $_zhimmer_hist_sub == $sub && $q == ${_zhimmer_hist_q}* ]]; then
+    _zhimmer_hist_m=( ${(M)_zhimmer_hist_m:#$~pat} )
   else
-    # (b) quotes the query as a literal: a `[` or `*` typed at the prompt is a
-    # character to match, not a pattern to run.
-    _zhimmer_hist_m=( ${history[(R)${(b)q}*]} )
+    _zhimmer_hist_m=( ${history[(R)$~pat]} )
   fi
-  _zhimmer_hist_q=$q _zhimmer_hist_at=$HISTCMD
+  _zhimmer_hist_q=$q _zhimmer_hist_at=$HISTCMD _zhimmer_hist_sub=$sub
   (( $#_zhimmer_hist_m )) || return
+
+  # A search answers in history order, newest first, and stops there. That is
+  # what the key has always meant -- in fzf and in zsh's own bck-i-search alike
+  # -- because you are looking for a thing you ran and *when* is how you
+  # remember it. Frecency is for the drop-down, where there is no question yet
+  # and the best guess is the one you run most; applied to a search it hides
+  # this morning's command behind one from last year that you type every day.
+  #
+  # Duplicates collapse to their newest occurrence. A history is mostly
+  # repeats, the window is twenty rows, and four screens of `ls` is not a
+  # search result.
+  if (( sub )); then
+    local -A seen
+    local c
+    # The same window the ranking below uses. Without it a query matching
+    # nothing much scans the whole history to come back with three rows.
+    for c in ${_zhimmer_hist_m[1,limit*20]}; do
+      # A row with a newline in it cannot be drawn.
+      [[ $c == *$'\n'* ]] && continue
+      [[ -n $seen[$c] ]] && continue
+      seen[$c]=1
+      reply+=( "$c" )
+      (( $#reply >= limit )) && break
+    done
+    return
+  fi
 
   # Only the newest occurrences are counted. Recency weights the newest at 4x
   # the oldest, so what happened further back than a few hundred runs of this
@@ -78,11 +120,21 @@ _zhimmer_hist_rank() {  # <query> <limit>
 }
 
 _zhimmer_source_history() {
-  local -i wstart=$1 limit=$2
+  local -i limit=$1
   local -a reply
-  _zhimmer_hist_rank "$LBUFFER" $limit
+  _zhimmer_hist_rank "$LBUFFER" $limit $_zhimmer_search
   (( $#reply )) || return
   # The top row goes to the ghost through _zhimmer_addgroup, which offers the
   # first row of every group it draws -- see ZHIMMER_GHOST_RANK in ghost.zsh.
-  _zhimmer_addgroup zhimmer-history history $wstart "$reply[@]"
+  # In a search it offers nothing in practice: a candidate that merely contains
+  # what is typed does not extend it, and the ghost drops any that does not.
+  #
+  # Two literal calls rather than one with the label in a variable: the header
+  # says which of the two questions is being asked, and test/unit.zsh reads the
+  # group and label straight out of this file to check both have a colour.
+  if (( _zhimmer_search )); then
+    _zhimmer_addgroup zhimmer-history search "$reply[@]"
+  else
+    _zhimmer_addgroup zhimmer-history history "$reply[@]"
+  fi
 }

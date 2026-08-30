@@ -82,6 +82,20 @@ git -C $fh/zrepo update-ref refs/remotes/zorigin/main \
 git -C $fh/zrepo update-ref refs/remotes/zorigin/HEAD \
   "$(git -C $fh/zrepo rev-parse HEAD)"
 
+# A repository with a known dirty state, for the prompt. Committed first so
+# there is a HEAD to read, then dirtied one file per symbol the prompt can draw.
+# The branch name carries a slash, which is the case a greedy ${head##*/} gets
+# wrong -- and gets wrong silently, on exactly the branches that say the most.
+mkdir -p $fh/zrepo
+git -C $fh/zrepo init -q -b main 2>/dev/null
+git -C $fh/zrepo config user.email t@t; git -C $fh/zrepo config user.name t
+: > $fh/zrepo/tracked.txt; : > $fh/zrepo/doomed.txt
+git -C $fh/zrepo add -A 2>/dev/null
+git -C $fh/zrepo commit -qm init 2>/dev/null
+git -C $fh/zrepo checkout -qb feat/menu 2>/dev/null
+print change >> $fh/zrepo/tracked.txt      # modified   !
+: > $fh/zrepo/fresh.txt                    # untracked  ?
+
 mkdir -p $fh/.config/zsh
 cat > $fh/.config/zsh/.zshrc <<RC
 autoload -Uz compinit; compinit -u -d $fh/compdump
@@ -94,6 +108,15 @@ cd $fh
 # A self-insert wrapper that was already there when zhimmer loaded. It
 # uppercases what is typed, so the screen says whether zhimmer chained onto it
 # or replaced it.
+# Row colours are on by default, so the case that checks they can be turned
+# off has to say so before the plugin reads the style at load.
+if [[ -n \$ZHIMMER_TEST_NO_ROW_COLORS ]]; then
+  zstyle ':zhimmer:*' row-colors no
+fi
+# The prompt is off by default, so the cases that want it say so.
+if [[ -n \$ZHIMMER_TEST_PROMPT ]]; then
+  zstyle ':zhimmer:*' prompt yes
+fi
 if [[ -n \$ZHIMMER_TEST_CHAIN ]]; then
   _ztest_upper() { LBUFFER+=\${KEYS:u} }
   zle -N self-insert _ztest_upper
@@ -146,11 +169,25 @@ _assert() {  # _assert <capture-fn> <want|not> <label> <substring>
 
 # check/refute look at the line being edited; checks/refutes at the whole screen,
 # which is where the drop-down is.
+# The exit-status colour, read back from the escape the terminal actually got.
+# The indicator is a colour on one character, so there is nothing in the plain
+# text capture that distinguishes success from failure.
+promptcol() { tmux capture-pane -p -e -t $s | rg -o '38;2;[0-9;]+m ?>' | tail -1 }
+
 check()   { _assert line1  want "$@" }
 refute()  { _assert line1  not  "$@" }
 checksel(){ _assert selected want "$@" }
 checks()  { _assert screen want "$@" }
 refutes() { _assert screen not  "$@" }
+checkcol(){ _assert promptcol want "$@" }
+
+# Row accents live nowhere in the plain-text capture: the display strings are
+# plain by design, and ZLS_COLORS is what puts the escape on screen. So these
+# read the escapes back rather than the text.
+screenesc() { tmux capture-pane -p -e -t $s }
+checkesc()  { _assert screenesc want "$@" }
+
+refuteesc() { _assert screenesc not  "$@" }
 
 print "== zhimmer screen tests =="
 
@@ -161,14 +198,17 @@ check "ghost completes the top candidate" 'sudo openvpn ~/VPNs/no'
 # keymap, so this covers the vi-backward-delete-char case.
 send BSpace BSpace BSpace
 check "ghost refreshes on backspace, no stale tail" 'sudo openvpn ~/VPNs/no'
-# The menu does not write rows into the line as it walks them (type-to-filter),
-# so the line still holds what was typed -- and a ghost left over from typing
-# would sit past it, repeating the tail of a row the menu is already showing.
+# The menu does not write rows into the line as it walks them, so the line
+# still holds what was typed. The ghost past it follows the *selection* rather
+# than staying on the top candidate -- otherwise the bar would mark one row
+# while the greyed tail promised another, and Right and Enter would put
+# different lines on screen.
 send Down
-refute   "Down does not leave the ghost standing behind the menu" 'VPNs'
 checksel "Down opens the menu on its first row" 'sudo openvpn ~/VPNs/no'
+check    "and the ghost is showing that same row"  'sudo openvpn ~/VPNs/no'
 send Down
 checksel "Down again moves to the second row" 'sudo openvpn ~/VPNs/universal.ovpn'
+check    "and the ghost moves with it"        'sudo openvpn ~/VPNs/universal.ovpn'
 stop
 
 # Ctrl+E (and End) take the ghost, the way zsh-autosuggestions binds them.
@@ -291,11 +331,15 @@ refutes "a long listing does not turn into a yes/no question" 'do you wish to se
 refutes "nor into a pager with nothing to select" 'Tab for more'
 checks   "it is a menu, with the count and position under it" 'matches -- at'
 checksel "whose first row is the one the cursor is on" 'f1'
-refute   "with nothing written into the line until it is accepted" 'f1'
+# Tab's menu is plain zsh menu selection: it writes each match into the line as
+# it walks. `interactive` is what would stop that, and it is deliberately not
+# asked for -- complist draws a hardcoded `interactive: []` row for as long as
+# the mode is on. zhimmer's own drop-down is the one that marks without writing.
+check    "and it writes the row it is on into the line" 'ls ./zmany/f1'
 send Down Down
-checksel "and the arrows walk it, one match at a time" 'f100'
+checksel "the arrows walk it, one match at a time" 'f100'
 send Enter
-check    "Enter is what takes the row" 'ls ./zmany/f100'
+check    "Enter takes the row it ended on" 'ls ./zmany/f100'
 stop
 
 # The prompt has to survive it. The pager filled the screen from the top down,
@@ -307,21 +351,25 @@ send Tab
 checks  "the line being edited is still on screen under a long menu" '% ls ./zmany/'
 stop
 
-# Typing at an open menu narrows it. Without that the first character accepts
-# whichever row the cursor happens to be on and types after it: `ls /etc/<Tab>a`
-# left `ls /etc/acpi/a`, a directory nobody asked for.
+# Typing at Tab's open menu takes the row it is on and types after it, which is
+# what `menu-complete` has always done. Narrowing is zhimmer's own drop-down's
+# job, and it picks the typing up from here -- see "the drop-down" below, where
+# the same keystrokes narrow instead.
 start
 send "ls ./zmany/"
 send Tab
 send "f149"
-check   "typing narrows the menu instead of accepting the row it is on" 'ls ./zmany/f149'
-checks  "leaving the list showing what still matches" 'f149'
-refutes "and not what no longer does" ' f100 '
+check "typing at Tab's menu takes the row and types after it" 'ls ./zmany/f1'
+stop
+
 # Backspace is bound inside the menu as well as outside it: zhimmer rebinds the
-# widget to refresh the ghost, which stopped complist recognising the key and
-# made it leave the menu, accepting a row on the way out.
+# widget to refresh the drop-down, which stopped complist recognising the key
+# and made it leave the menu, accepting a row on the way out.
+start
+send "ls ./zmany/"
+send Tab
 send BSpace
-check   "backspace widens the list again rather than leaving the menu" 'ls ./zmany/f14'
+checks "backspace hands the area back to zhimmer's own list" ' file '
 stop
 
 # A short list fits on screen, which is not the same as having nothing to choose
@@ -459,15 +507,20 @@ send Down
 checks "Down opens a menu drawn from a source other than history" 'zbeta1.txt'
 stop
 
-# The menu is not bound by the screen the way the plain listing is: it holds
-# more than fits and scrolls, which is the only way to reach candidates past
-# the bottom of the terminal.
+# The list is not bound by the screen. The drawn window is -- only the rows
+# that fit are laid out -- but the window scrolls, so a candidate past the
+# bottom of the terminal is still reachable by walking down to it. Clamping the
+# list itself to $LINES is what stops a menu holding more than fits.
 start 80 14
 send "ls ./zmany/f1"
 send Down
-checks "the menu holds more matches than the screen has rows" 'matches'
-send Down Down Down Down Down Down Down Down Down Down Down Down
-refutes "moving past the bottom scrolls rather than stopping at the top" 'at Top'
+checks   "the first rows are drawn under their header" ' file '
+send Down Down Down Down Down Down Down Down Down
+checksel "walking past the bottom reaches a row that did not fit" './zmany/f107'
+refutes  "and the window has scrolled the header off the top" ' file '
+# Wrapping, which is also what lets Up open the menu from nothing.
+send Down
+checksel "and one more wraps back to the first row" './zmany/f1'
 stop
 
 # Tab's matches are drawn by zhimmer, not by complist's columns: same header
@@ -625,6 +678,240 @@ send "abc"
 check "zhimmer chains onto an existing self-insert rather than replacing it" 'ABC'
 stop
 extra_env=''
+
+print "\n-- the prompt --"
+# Off by default: someone loading zhimmer for its menu keeps the prompt they
+# came with, whether that is Pure, starship or zsh's own.
+start
+send "cd zrepo" Enter
+refutes "the prompt stays out of the way unless asked for" 'feat/menu'
+stop
+
+extra_env='ZHIMMER_TEST_PROMPT=1'
+start
+send "cd zrepo" Enter
+checks "the prompt draws the directory" 'zrepo'
+checks "and the branch, slash and all, out of .git/HEAD" 'feat/menu'
+# The symbols arrive from the background half, so this is also the assertion
+# that the async path delivers at all.
+checks "and the status symbols for a dirty tree" '!?'
+stop
+
+# Exit status is baked into the string at precmd rather than left to %(?..),
+# because the async redraw happens long after $? stopped meaning the command.
+start
+send "cd zrepo" Enter
+send "true" Enter
+checkcol "the prompt marks success" '166;227;161'
+send "false" Enter
+checkcol "and marks a failure" '243;139;168'
+# The redraw the background half provokes must not repaint a failure as a
+# success: a reset-prompt that re-read $? would report on the redraw instead.
+send "" Enter
+send "false" Enter
+sleep 2
+checkcol "a failure survives the async redraw" '243;139;168'
+stop
+
+# A repository is not the only place a prompt gets drawn.
+start
+send "cd /tmp" Enter
+checks "outside a repository there is no branch and no symbols" '/tmp'
+refutes "and nothing left over from the last one" 'feat/menu'
+stop
+
+# Saving and restoring, not just setting: the fixture rc uses '%% ' as its
+# prompt, so the restore is visible.
+start
+send "cd zrepo" Enter
+send "zhimmer-prompt-off" Enter
+# Cleared first. Turning the prompt off does not erase the lines it already
+# drew, and a whole-screen assertion reads that scrollback as proof it is
+# still on -- which is how this case passed a broken restore once.
+send "clear" Enter
+refutes "turning it off puts the original prompt back" 'feat/menu'
+send "zhimmer-prompt-on" Enter
+send "clear" Enter
+checks "and turning it on brings it back" 'feat/menu'
+stop
+extra_env=''
+
+
+print "\n-- row colours --"
+start
+send "git"
+# The command word of a history row, in the command green.
+checkesc "a history row colours its command word" '38;2;166;227;161mgit'
+# Plain escapes in a display string would be counted as width by the layout and
+# push the row over the edge; these come from ZLS_COLORS, after the measuring.
+refutes  "and the row is not wrapped by the escapes" 'status --short --branch$'
+stop
+
+start
+send "cat ./zb"
+# Group scoping: without it a filename would be painted as though it were a
+# command, which is the whole reason the rules carry a (group) prefix.
+checkesc "a file row uses the file colour"       '38;2;250;179;135m./zbeta'
+refuteesc "and not the command green"            '38;2;166;227;161m./zbeta'
+stop
+
+# The fixture history has `sudo openvpn ...` in it.
+start
+send "sudo "
+checkesc "the command after a precommand is highlighted too" '38;2;166;227;161mopenvpn'
+checkesc "and the precommand itself is underlined" $'\e[4m\e[38;2;166;227;161msudo'
+stop
+
+# Tab rebuilds ZLS_COLORS from the list-colors style and leaves it that way,
+# which stripped the row rules from every listing after the first completion.
+start
+send "cat ./zh"
+send Tab
+send C-c
+send "sudo "
+checkesc "row colours survive a Tab completion" '38;2;166;227;161mopenvpn'
+stop
+
+extra_env='ZHIMMER_TEST_NO_ROW_COLORS=1'
+start
+send "git"
+checks    "with row-colors off the rows are still drawn" 'git status --short --branch'
+refuteesc "but carry no accent"                          '38;2;166;227;161mgit'
+stop
+extra_env=''
+
+
+print "\n-- the drop-down --"
+start
+send "ls ./zmany/f1"
+checks "the rows are drawn"          './zmany/f10'
+checks "under a group header"        ' file '
+# Everything here is POSTDISPLAY and region_highlight, so complist never runs
+# and there is no interactive mode to enter -- which is the whole point.
+refutes "and complist never gets involved" 'interactive:'
+stop
+
+start
+send "ls ./zmany/f1"
+send Down
+checksel "Down marks the first row"  './zmany/f1'
+send Down
+checksel "and moves to the second"   './zmany/f10'
+send Up
+checksel "Up moves back"             './zmany/f1'
+# The list must not shift as the selection moves: nothing is inserted or
+# removed above it, so the header cannot move. That shifting row is what the
+# complist path costs to keep filtering alive.
+send Down Down Down
+refutes "still no interactive row after moving" 'interactive:'
+stop
+
+# Filtering needs no mode: typing already recomputes the list, so narrowing an
+# open menu is the same code path as narrowing before one was opened.
+start
+send "ls ./zmany/f1"
+send Down
+send "4"
+checks  "typing narrows the open menu"     './zmany/f14'
+refutes "dropping what no longer matches"  './zmany/f10 '
+refutes "and without entering any mode"    'interactive:'
+stop
+
+start
+send "ls ./zmany/f10"
+send Down
+send Enter
+check "Enter takes the highlighted row into the line" 'ls ./zmany/f10'
+stop
+
+# The accept keys read the tracked ghost, not the whole of POSTDISPLAY -- which
+# also holds every row of the menu. Reading that put the header rule and all
+# its rows into BUFFER, and because the rows were still on screen underneath it
+# looked exactly like the menu being open, one Enter away from running.
+start
+send "sudo openv"
+send C-e
+check   "Ctrl+E takes the ghost and nothing else" 'sudo openvpn ~/VPNs/no'
+refutes "no header rule ends up in the line"      '─────'
+stop
+
+start
+send "ls ./zmany/f1"
+send Down
+send C-e
+refute "and not with a row selected either" '────'
+stop
+
+
+print "\n-- searching (Ctrl+R) --"
+# The same ranking with the anchor moved: `openvpn` is not the start of any
+# remembered line, so only a substring search finds it.
+start
+send "openvpn"
+refutes "a prefix search finds nothing mid-line" ' history '
+send C-r
+checks  "Ctrl+R turns it into a search"          ' search '
+checks  "and finds the line by its middle"       'sudo openvpn ~/VPNs/no'
+# A row is always selected in a search, so Enter always has one to take.
+checksel "with a row already selected"           'sudo openvpn ~/VPNs/no'
+send C-r
+checksel "and Ctrl+R again steps to the next match" 'sudo openvpn ~/VPNs/universal.ovpn'
+stop
+
+# On an empty line a search is "everything, best first" -- min-chars is about
+# not guessing two characters into a line, and a search is the question itself.
+start
+send C-r
+checks   "Ctrl+R on an empty line opens on the whole history" ' search '
+# In history order, newest first -- not the drop-down's frecency order. The
+# newest line in the fixture wins even though `git status --short --branch` is
+# the only one in it that was run twice.
+checksel "newest first, not most-run first" "grep -rn"
+stop
+
+# Deep enough to scroll: a search is meant to be walked down, so it holds
+# search-suggestions rows and the window moves under them rather than the list
+# being clamped to the screen.
+# Twelve rows of terminal is a window of eight, and the fixture deduplicates to
+# eight rows under a header -- so the last of them cannot be on screen when the
+# search opens, and walking to it is the proof that the window moves.
+start 80 12
+send C-r
+send Down Down Down Down Down Down Down
+checksel "walking down a search reaches a row that did not fit" 'ls -la'
+refutes  "and the window scrolled its header off the top"       ' search '
+stop
+
+# With nothing to show the mode still has to be visible: it changes what Enter
+# does, and without the header there is no sign it is on.
+start
+send C-r
+send "zzqqxx"
+checks "a search with no matches says so" 'search: no match'
+stop
+
+# Ctrl+C never reaches line-finish, so the mode is cleared at line-init too --
+# without that the next line was still searching. `clear` first, because the
+# rows the abandoned search drew are still in the scrollback.
+start
+send C-r
+send "openvpn"
+send C-c
+send "clear"
+send Enter
+send "sudo openv"
+checks  "an abandoned search does not leak into the next line" ' history '
+refutes "which is no longer a search"                          ' search '
+stop
+
+# Enter takes the row, and the line is then an ordinary line again.
+start
+send C-r
+send "universal"
+send Enter
+check "Enter takes the row a search is on" 'sudo openvpn ~/VPNs/universal.ovpn'
+stop
+
 
 rm -rf $fh
 print ""

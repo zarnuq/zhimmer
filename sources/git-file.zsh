@@ -44,7 +44,7 @@ _zhimmer_source_git-file() {
   (( CURRENT > 2 )) || return
   [[ $words[1] == git ]] || return
   [[ $words[2] == (add|stage|restore|rm|diff|checkout|reset|stash) ]] || return
-  local -i limit=$2
+  local -i limit=$1
   _zhimmer_gitfile_load
   local -a reply
   _zhimmer_pick $limit ${(M)_zhimmer_gitfile_paths:#${(b)PREFIX}*} || return

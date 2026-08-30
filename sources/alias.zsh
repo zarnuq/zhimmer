@@ -10,7 +10,7 @@ _zhimmer_source_alias() {
   # a command in front of them do not, because `git checkout ` has already said
   # what the list is of.
   [[ -n $PREFIX ]] || return
-  local -i limit=$2
+  local -i limit=$1
   # Sorted before the cut, not after: a hash has no order of its own, so cutting
   # first offered whichever ten the hash happened to hold first -- a different
   # ten in the next shell.

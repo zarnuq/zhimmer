@@ -83,7 +83,7 @@ _zhimmer_ssh_load() {
 _zhimmer_source_ssh-host() {
   (( CURRENT > 1 )) || return
   [[ $words[1] == (ssh|scp|sftp|rsync|mosh|ssh-copy-id) ]] || return
-  local -i limit=$2
+  local -i limit=$1
   # scp and rsync take paths as well as hosts, and a path is not a host until
   # there is no `:` in the word: `scp file host:` is past choosing one.
   [[ $PREFIX == *:* ]] && return

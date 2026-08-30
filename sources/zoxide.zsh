@@ -19,7 +19,7 @@ _zhimmer_source_zoxide() {
   # argument to complete.
   (( CURRENT > 1 )) || return
   [[ $words[1] == (cd|z) ]] && (( $+commands[zoxide] )) || return
-  local -i limit=$2
+  local -i limit=$1
   _zhimmer_zoxide_load
   # Matched anywhere in the path, which is the point of zoxide: `z hmr` finds
   # ~/src/zhimmer. (b) quotes the query into a literal, the same way the history

@@ -1,5 +1,4 @@
-# The shared candidate generator, plus the two entry points that differ only in
-# whether the result is merely listed or handed to menu selection.
+# The shared candidate generator, and the group helpers every source ends in.
 
 # Every scalar setting and its default, in one table: _zhimmer_cfg and
 # _zhimmer_bool read it and zhimmer-doctor prints it, so a default is written
@@ -12,15 +11,21 @@
 # test of alias expansion tested nothing but the guard at the top of it.
 typeset -gA ZHIMMER_DEFAULTS=(
   max-suggestions   10
-  menu-suggestions  50
   min-chars         2
   ghost-text        yes
   ghost-color       'fg=#6c7086'
+  row-colors        yes
   expand-alias      yes
   tame-lists        yes
-  type-to-filter    yes
   style-completion  yes
   toggle-key        '^@'
+  search-key        '^R'
+  search-suggestions 100
+  # Off unless asked for: this plugin is loaded for its menu, and taking over
+  # the prompt of everyone who does that is not a trade they agreed to. See
+  # lib/prompt.zsh.
+  prompt            no
+  prompt-async      yes
 )
 
 # Read a setting. The answer comes back in REPLY rather than on stdout, for the
@@ -39,106 +44,93 @@ _zhimmer_bool() {
   [[ $REPLY == (yes|true|1|on) ]]
 }
 
-# Whether anything was drawn, set by _zhimmer_take as a group claims its rows
-# and cleared before each redraw. Down walks into whatever is on screen, so this
-# is what answers "is there a menu to open?" -- asking a source again instead
-# left every list Down could not have opened unreachable.
-typeset -g _zhimmer_drew=0
+# Whether Ctrl+R has turned the drop-down into a history search: the query
+# matches anywhere in a line rather than only at its start, and history is the
+# only source asked. It lives here rather than in the history source because
+# three other files read it -- the gather below, the draw (which keeps a row
+# selected while a search is open) and the widget that turns it on.
+typeset -gi _zhimmer_search=0
 
+# Gather the candidates. This runs inside a `zle -C` widget for one reason: the
+# completion system is what splits the line into $words and hands a source
+# $PREFIX and $CURRENT, and every source decides whether it applies from those.
+# Nothing is added with compadd -- the rows go to lib/zlemenu.zsh, which draws
+# them -- so what the widget itself would list is always empty.
 .zhimmer-complete() {
-  local mode=$1
+  _zhimmer_zle_reset
   local -a srcs
-  zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
-  local -i limit
-  local REPLY
-
-  if [[ $mode == menu ]]; then
-    # The menu scrolls (see MENUPROMPT in theme.zsh), so it is not bound by the
-    # screen: it can hold more than fits and the user walks down into the rest.
-    # That is the whole difference between the two entry points -- a listing has
-    # to fit, a menu only has to be reachable -- and a budget of -1 says so,
-    # leaving the per-source limit as the only cap.
-    _zhimmer_cfg menu-suggestions; limit=$REPLY
-    typeset -g _zhimmer_budget=-1
+  # A search asks one question, so it gets one answer. Offering the files in
+  # this directory alongside the remembered lines that contain what was typed
+  # is two different searches sharing a screen.
+  if (( _zhimmer_search )); then
+    srcs=( history )
   else
-    # Never ask for more rows than the screen can hold. complist does not
-    # paginate a raw zle -C listing: an over-long list simply scrolls the prompt
-    # off the top, taking the earlier candidates with it. Reserve room for the
-    # prompt and the group header.
-    #
-    # The budget is shared across every group. Without that the per-source cap
-    # multiplies: six sources at ten each is sixty rows, which in a listing
-    # scrolls the earliest groups -- and the prompt -- off the top.
-    local -i room=$(( LINES - 5 ))
-    (( room < 1 )) && room=1
-    _zhimmer_cfg max-suggestions; limit=$REPLY
-    (( limit > room )) && limit=$room
-    typeset -g _zhimmer_budget=$room
+    zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
   fi
 
-  # zsh replaces only the *current word*, so a candidate holding a whole command
-  # line has to be trimmed to the part that starts at the current word. That
-  # offset is everything typed so far minus the part of the word before the
-  # cursor. (Assigning PREFIX=$LBUFFER does NOT widen the replaced region --
-  # verified; the match gets appended instead of substituted.)
-  local -i wstart=$(( ${#LBUFFER} - ${#PREFIX} ))
+  # A cap on the total rows, shared across every group -- without it the
+  # per-source limit multiplies, and eleven sources at ten each is a hundred
+  # and ten rows built on every keystroke.
+  #
+  # It is deliberately *not* tied to $LINES. The drawn window is bounded by the
+  # screen already (_zhimmer_zle_draw lays out only the rows that fit) and it
+  # scrolls, so a candidate past the bottom of the terminal is still reachable
+  # by walking down to it. Clamping the list itself to the screen is what stops
+  # a menu holding more than fits, which is the one thing a menu is for.
+  #
+  # A search gets its own, larger number and the whole budget to itself. It is
+  # one source and it is meant to be scrolled through -- ten rows is a
+  # suggestion, not a search result -- so `search-suggestions` is what decides
+  # how deep it goes. Everything else bounds the work instead: five groups'
+  # worth, which puts the sources named first (history, by convention) ahead of
+  # the rest when the budget runs out.
+  local REPLY
+  local -i limit
+  if (( _zhimmer_search )); then
+    _zhimmer_cfg search-suggestions; limit=$REPLY
+    typeset -g _zhimmer_budget=$(( limit + 1 ))    # the rows, plus their header
+  else
+    _zhimmer_cfg max-suggestions; limit=$REPLY
+    typeset -g _zhimmer_budget=$(( limit * 5 ))
+  fi
 
   local s
   for s in $srcs; do
     # Each group costs a header row, so anything under 2 cannot show a result.
-    (( _zhimmer_budget < 0 || _zhimmer_budget >= 2 )) || break
-    (( ${+functions[_zhimmer_source_$s]} )) && _zhimmer_source_$s $wstart $limit
+    (( _zhimmer_budget >= 2 )) || break
+    (( ${+functions[_zhimmer_source_$s]} )) && _zhimmer_source_$s $limit
   done
+
+  # A search that found nothing still says so. With the rows gone there is
+  # otherwise nothing on screen saying the mode is on -- and it changes what
+  # Enter does, so it has to be visible even when it has nothing to offer.
+  (( _zhimmer_search && ! $#_zhimmer_zrow )) && _zhimmer_zle_header 'search: no match'
+  return 0
 }
 
-# Which of the two entry points is running decides how many rows may be asked
-# for, so the generator is told rather than left to guess.
-.zhimmer-complete-list() { .zhimmer-complete list }
-
-.zhimmer-complete-menu() {
-  compstate[insert]='menu'
-  # Typing inside the menu narrows it rather than accepting the highlighted row
-  # (type-to-filter; the keys that keep it that way are in widgets.zsh). Tab's
-  # menu is told the same thing through the `menu` style, which a raw zle -C
-  # widget never goes through, so here it is set on the parameter compsys would
-  # have set. Unset rather than left alone when off: that same style path is
-  # what wrote the global last.
-  if _zhimmer_bool type-to-filter; then
-    MENUMODE=interactive
-  else
-    unset MENUMODE
-  fi
-  .zhimmer-complete menu
-}
-
-# Add one group of whole-line candidates. Callers pass the full command lines;
-# this trims each to the replaceable tail while keeping the full line on display.
+# Add one group of whole-line candidates -- rows that are a whole command line
+# and become one when taken.
 #
-#   _zhimmer_addgroup <group> <header> <wstart> <full-line>...
+#   _zhimmer_addgroup <group> <label> <full-line>...
 _zhimmer_addgroup() {
-  local group=$1 name=$2; local -i wstart=$3; shift 3
+  local group=$1 name=$2; shift 2
   (( $# )) || return
   _zhimmer_take $#
   (( _zhimmer_taken )) || return
   set -- "${@[1,_zhimmer_taken]}"
   _zhimmer_offer_ghost $name "$1"
-  local REPLY
-  _zhimmer_header $name; local header=$REPLY
-  local -a full=() tails=()
-  local c
-  for c in "$@"; do
-    _zhimmer_row "$c"; full+=( "$REPLY" )
-    tails+=( "${c:$wstart}" )
-  done
-  # -l forces one match per line: a multi-column list makes Down ambiguous,
-  # since menuselect moves within a column before wrapping to the next.
-  compadd -l -Q -U -V $group -X $header -d full -a tails
+  # Shown and taken are the same string here, which is what makes this the
+  # simple case: a remembered line replaces the whole buffer. Copied to a named
+  # array first -- `argv` inside _zhimmer_emit is its own positional list, not
+  # this one.
+  local -a lines=( "$@" )
+  _zhimmer_emit $group $name lines lines
 }
 
 # Add a group of word-level candidates -- ones that replace just the current
-# word, so they need none of the whole-line trimming above.
+# word.
 #
-#   _zhimmer_addwords <group> <header> <word>... [-- <row>...]
+#   _zhimmer_addwords <group> <label> <word>... [-- <row>...]
 #
 # Rows show the word itself unless rows are given after --, which is what an
 # alias needs: the match is `gs`, the row reads `gs  →  git status -s`. The two
@@ -170,29 +162,45 @@ _zhimmer_addwords() {
     rows=( "${(@)matches}" )
   fi
 
-  # A word source replaces only the current word, so the ghost -- which is
-  # compared against the whole of LBUFFER -- needs the line the match would
-  # make, not the match. Everything before the current word, plus the match.
-  # A candidate that is not an extension of what is typed simply draws no
-  # ghost: zoxide matches anywhere in a path, so `z hmr` offers a line that
-  # does not begin with `z hmr`, and _zhimmer_ghost drops it.
-  _zhimmer_offer_ghost $name "${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}${matches[1]}"
+  # A word source replaces only the current word, so the line a row would leave
+  # is everything before that word, the match, and whatever was after the
+  # cursor. The ghost is compared against the whole of LBUFFER and needs the
+  # same thing: a candidate that does not extend what is typed simply draws no
+  # ghost, which is what happens to zoxide, matching anywhere in a path -- `z
+  # hmr` offers a line that does not begin with `z hmr`.
+  local head=${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}
+  _zhimmer_offer_ghost $name "$head${matches[1]}"
 
-  local REPLY
-  _zhimmer_header $name; local header=$REPLY
-  # -l only takes effect alongside -d, so the display array is required even
-  # when it mirrors the matches. Without it the list goes multi-column and Down
-  # navigates columns instead of rows.
-  local -a disp=(); local c
-  for c in "$rows[@]"; do _zhimmer_row "$c"; disp+=( "$REPLY" ); done
-  # -U because a source has already decided what matches. Without it compadd
-  # keeps only the candidates that literally begin with the word on the line and
-  # drops the rest without saying so, which silently threw away every match a
-  # source found by any rule other than a plain prefix: zoxide matches anywhere
-  # in a path -- `z hmr` for ~/src/zhimmer -- and none of those survived, and a
-  # glob in a filename (`ls ./z*`) left the list empty because `./zalpha` does
-  # not start with `./z*`.
-  compadd -l -U -V $group -X $header -d disp -a matches
+  local -a bufs=(); local m
+  for m in "$matches[@]"; do bufs+=( "$head$m$RBUFFER" ); done
+  _zhimmer_emit $group $name rows bufs
+}
+
+# Hand one finished group to the menu. Both helpers above end here, which is
+# the point of it: the label a header is drawn under and the group a row's
+# colour is keyed by are decided once instead of twice.
+#
+# The group and the label are two different strings and it matters which is
+# used where. ZHIMMER_COLORS is keyed by label (`branch`), ZHIMMER_ROW_COLORS
+# by group (`git-branch`), and for six of the eleven sources those are not the
+# same word -- so a row looked up by its label came back with no colour at all,
+# silently, because a missing hash key is an empty string rather than an error.
+#
+# The two lists travel by name: parallel arrays cannot be flattened into "$@".
+# Every local is prefixed so it cannot shadow the array a caller named --
+# `local -a rows` takes effect before its own right-hand side is evaluated, so
+# a collision would read the list back empty.
+#
+#   _zhimmer_emit <group> <label> <display array> <buffer array>
+_zhimmer_emit() {
+  local -a _zedisp=( "${(@P)3}" ) _zebuf=( "${(@P)4}" )
+  local -i _zei
+  # Rows go in unpadded: the menu pads at draw time, so a resize is picked up
+  # without regenerating anything.
+  _zhimmer_zle_header $2
+  for (( _zei = 1; _zei <= $#_zedisp; _zei++ )); do
+    _zhimmer_zle_match "$_zedisp[_zei]" $1 "$_zebuf[_zei]"
+  done
 }
 
 # Sort a source's matches and cut them to its limit, in reply. The two steps
@@ -218,19 +226,13 @@ _zhimmer_pick() {  # <limit> <candidate>...  -> reply
 
 # Claim rows from the shared budget: one for the group header plus as many as
 # are left for its matches. Answers in _zhimmer_taken rather than on stdout --
-# a $( ) here would run in a subshell and silently discard the decrement -- and
-# is the one place that knows a group is about to be drawn.
+# a $( ) here would run in a subshell and silently discard the decrement.
 _zhimmer_take() {
   local -i want=$1
   typeset -g _zhimmer_taken=0
-  if (( _zhimmer_budget < 0 )); then
-    _zhimmer_taken=$want                        # a menu is not bounded by rows
-  else
-    (( _zhimmer_budget >= 2 )) || return 0
-    (( _zhimmer_budget-- ))                     # header
-    _zhimmer_taken=$(( want < _zhimmer_budget ? want : _zhimmer_budget ))
-    (( _zhimmer_budget -= _zhimmer_taken ))
-  fi
-  (( _zhimmer_taken )) && _zhimmer_drew=1
+  (( _zhimmer_budget >= 2 )) || return 0
+  (( _zhimmer_budget-- ))                       # header
+  _zhimmer_taken=$(( want < _zhimmer_budget ? want : _zhimmer_budget ))
+  (( _zhimmer_budget -= _zhimmer_taken ))
   return 0
 }

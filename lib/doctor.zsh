@@ -80,6 +80,24 @@ zhimmer-doctor() {
     _zhimmer_check "$c[1] absent" $found 0 "$c[3]"
   done
 
+  # Only when the prompt is switched on. Pure and starship are not conflicts
+  # for a completion menu -- most people running zhimmer are running one of
+  # them -- so this is asked about the one setting that makes them one, rather
+  # than added to the table above and warned about unconditionally.
+  if (( _zhimmer_prompt_on )); then
+    local -A pconf=(
+      'pure'     'prompt_pure_precmd'
+      'starship' 'starship_precmd'
+      'p10k'     'p10k'
+      'spaceship' 'spaceship_precmd'
+    )
+    local pk
+    for pk in ${(ok)pconf}; do
+      (( ${+functions[${pconf[$pk]}]} )) &&
+        print "  WARN  $pk is loaded and zhimmer's prompt is on -- the last one to set PROMPT wins\n        turn one off: zstyle ':zhimmer:*' prompt no, or zhimmer-prompt-off"
+    done
+  fi
+
   local sf
   for sf in $srcs; do
     (( ${+functions[_zhimmer_source_$sf]} )) || print "  WARN  source '$sf' is configured but has no _zhimmer_source_$sf function"
