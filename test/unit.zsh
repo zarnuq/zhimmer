@@ -198,6 +198,42 @@ local swarm="${(j:|:)reply}"
 _zhimmer_hist_q=; _zhimmer_hist_rank 'commit' 5 1
 is "narrowing a search agrees with a cold one" "$swarm" "${(j:|:)reply}"
 
+# A habit that ended loses to the one that replaced it: `stale` below was run
+# twenty times to `fresh`'s three and still comes second, because twenty-five
+# matching lines sit between them and every run counts for less the further
+# back it is. The score this replaced could not do that at any ratio -- see
+# _zhimmer_hist_rank in sources/history.zsh for why.
+#
+# The halflife is pinned rather than left to the table: these counts are chosen
+# against it, so a change to the default should not read as a ranking failure.
+#
+# A private history, popped afterwards so the fixture above is what the rest of
+# the file still sees. The trailing `zzz` is the flush the note further up
+# describes: without it the last `vpn fresh` is the current line and is not in
+# $history yet, so the test would be ranking two of them rather than three.
+zstyle ':zhimmer:*' history-halflife 10
+fc -p /dev/null 500 500
+repeat 20 print -s -- 'vpn stale'
+for i in {1..25}; do print -s -- "vpn other-$i"; done
+repeat 3 print -s -- 'vpn fresh'
+print -s -- zzz
+_zhimmer_hist_q=; _zhimmer_hist_rank 'vpn' 5
+is "the line in current use outranks the one it replaced" "$reply[1]" 'vpn fresh'
+is "which is still offered, further down"  "${reply[(r)vpn stale]}" 'vpn stale'
+fc -P
+
+# The decay is gradual and not a cliff, which is the other half of frecency:
+# with nothing between them, a line run four times still leads one run twice,
+# even though the pair of runs is the newer.
+fc -p /dev/null 500 500
+repeat 4 print -s -- 'vpn often'
+repeat 2 print -s -- 'vpn twice'
+print -s -- zzz
+_zhimmer_hist_q=; _zhimmer_hist_rank 'vpn' 5
+is "frequency still decides when the two are the same age" "$reply[1]" 'vpn often'
+fc -P
+zstyle -d ':zhimmer:*'
+
 # -------------------------------------------------------------------- rows ---
 #
 # Rows are padded to a fixed width so the selection reads as a solid bar, and

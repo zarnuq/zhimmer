@@ -44,10 +44,18 @@ they run, with no `INC_APPEND_HISTORY` needed — but it is `HISTSIZE`, not
 `SAVEHIST`, that decides how much of the file is in memory to match against, so
 `zhimmer-doctor` says which one is holding the number down.
 
-Ranking is frecency — how often a command was run, weighted by how recently it
-last was, the newest occurrence counting four times the oldest. Only the newest
-few hundred occurrences of a prefix are counted: with that weighting the older
-ones cannot change the order, and stopping there is what keeps the cost flat.
+Ranking is frecency, as a sum: every run of a line counts, and counts for less
+the further back it was — full weight for the last one, half at
+`history-halflife` matches back, a twentieth at four times that. A line has to
+keep being run to keep its place, so the one you have switched to overtakes the
+one you ran for a year and stopped. Only the newest few hundred occurrences of
+a prefix are summed: past that a run is worth under a percent of a fresh one
+and cannot change the order, and stopping there is what keeps the cost flat.
+
+The distance is counted in *matches*, not in history entries — among ten ways
+to start a VPN, the one you want is the one you picked more recently than the
+other nine, whatever else you ran in between. Lower `history-halflife` to lean
+harder on what you ran last, raise it to lean on what you run most.
 
 Everything else — aliases, `$commands` — already lives in zsh's memory too,
 where filtering in place beats paying a fork.
@@ -357,6 +365,7 @@ zstyle ':zhimmer:*' style-completion yes
 zstyle ':zhimmer:*' toggle-key      '^@'
 zstyle ':zhimmer:*' search-key      '^R'
 zstyle ':zhimmer:*' search-suggestions 100
+zstyle ':zhimmer:*' history-halflife 10
 ```
 
 ### Appearance

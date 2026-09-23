@@ -1,5 +1,5 @@
-# Shell history, ranked by frecency: how often a command was run, weighted by
-# how recently it last was.
+# Shell history, ranked by frecency: every run of a line counts, and counts for
+# less the further back it was.
 #
 # All of it is zsh's own. ${history[(R)pattern]} searches the parameter in
 # place, newest first, without first expanding tens of thousands of entries
@@ -82,14 +82,45 @@ _zhimmer_hist_rank() {  # <query> <limit> [<substring>] -> reply
     return
   fi
 
-  # Only the newest occurrences are counted. Recency weights the newest at 4x
-  # the oldest, so what happened further back than a few hundred runs of this
-  # prefix cannot change the order -- and stopping there is what keeps the cost
-  # flat as the history grows. Twenty occurrences per row asked for is generous
-  # against a history that is mostly repeats.
-  local -A cnt pos
+  # Frecency is the sum of what each run of a line was worth, and a run is
+  # worth less the further back it was: full weight for the last one, half at
+  # `history-halflife` matches back, a twentieth at four times that.
+  #
+  # Summing is the whole of it. The old score multiplied an unbounded count by
+  # a single recency term that only ever spanned 1x to 4x, so frequency always
+  # won in the end: fifty runs of a VPN config retired last month outranked the
+  # one run twice this morning, and no amount of typing could move it, because
+  # nothing typed changes the ratio. A sum has no such ceiling -- a line has to
+  # keep being run to keep its score, and one that stopped being run decays
+  # past the one that replaced it.
+  #
+  # Distance is counted in *matches*, not in history entries -- see the ranking
+  # section of README.md for why that is the right clock.
+  #
+  # The window is what it always was, twenty matches per row asked for, and
+  # stopping there is what keeps the cost flat as the history grows. What a run
+  # at the edge of it is still worth depends on the halflife, though, not on
+  # the window alone: at the default pair it is a quarter of a percent of a
+  # fresh one and cannot change the order, but a large `history-halflife`
+  # against a small `max-suggestions` cuts the window off while runs still
+  # carry weight.
+  local REPLY
+  _zhimmer_cfg history-halflife
+  # A user's zstyle on its way into a division, so two guards. Strip it to
+  # digits, because an arithmetic error at the prompt is fatal rather than
+  # catchable; then fall back if nothing usable is left, because zero divides
+  # by zero. The fallback reads the table -- a number spelled here too would be
+  # a second place to change the default.
+  local -i half=${REPLY//[^0-9]/}
+  (( half )) || half=${ZHIMMER_DEFAULTS[history-halflife]}
+  local -i h2=half*half
+  # What the newest run is worth. Large enough that a run at the far edge of
+  # the window is still some thousands rather than rounding away to nothing,
+  # small enough that the shift below stays clear of the integer ceiling.
+  local -i fresh=1000000
+  local -A score first
   local c
-  local -i i=0
+  local -i i=0 dist sum
   for c in ${_zhimmer_hist_m[1,limit*20]}; do
     (( i++ ))
     [[ $c == $q ]] && continue        # what is already typed is not a suggestion
@@ -97,24 +128,28 @@ _zhimmer_hist_rank() {  # <query> <limit> [<substring>] -> reply
     # newline in it cannot be drawn. Skipped here rather than filtered out of
     # the match list, which would be another pass over every match.
     [[ $c == *$'\n'* ]] && continue
-    cnt[$c]=$(( ${cnt[$c]:-0} + 1 ))
-    [[ -n ${pos[$c]} ]] || pos[$c]=$i # newest first, so the first seen is the last run
+    # Read out into a scalar first, never as score[$c] inside the math: there
+    # the key is parsed as an arithmetic expression, and a history line holding
+    # a stray ( or [ is an invalid one.
+    sum=${score[$c]:-0} dist=i-1
+    score[$c]=$(( sum + fresh * h2 / (h2 + dist * dist) ))
+    [[ -n ${first[$c]} ]] || first[$c]=$i # newest first, so the first seen is the last run
   done
-  (( $#cnt )) || return
+  (( $#score )) || return
 
-  # count x recency as one integer, so (On) can sort on it: 1x for the oldest
-  # occurrence in the window, 4x for the newest, interpolated. The low three
-  # digits hold recency on its own, which breaks ties between equal scores the
-  # way the ranking already leans -- without them, equal scores would come out
-  # in whatever order the hash happened to hold them.
+  # One integer per line so (On) can sort on it: the score, shifted up to leave
+  # room for how recently the line last ran. Recency is inside the sum now, so
+  # the shift is no longer what makes the ranking lean -- two lines can only
+  # meet here by their summed weights landing on the same integer, and it
+  # settles that deterministically rather than leaving it to whatever order the
+  # hash happened to hold them in. The shift is the window size rather than a
+  # round number, so the tie-break can never carry into the score however large
+  # `max-suggestions` is set.
   local -a scored=()
-  local -i n=$i v r
-  for c in ${(k)cnt}; do
-    # Both read outside the math, not as pos[$c] inside it: there the key is
-    # parsed as an arithmetic subscript, and a history line holding a stray ( or
-    # [ is an invalid one.
-    v=${cnt[$c]} r=$(( n - ${pos[$c]} ))
-    scored+=( "$(( (v * (1000 + 3000 * r / n)) * 1000 + r ))"$'\t'"$c" )
+  local -i total last
+  for c in ${(k)score}; do
+    total=${score[$c]} last=${first[$c]}
+    scored+=( "$(( total * (i + 1) + i - last ))"$'\t'"$c" )
   done
   reply=( ${${(On)scored}[1,limit]#*$'\t'} )
 }

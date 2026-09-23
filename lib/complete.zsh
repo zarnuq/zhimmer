@@ -21,6 +21,10 @@ typeset -gA ZHIMMER_DEFAULTS=(
   toggle-key        '^@'
   search-key        '^R'
   search-suggestions 100
+  # How fast a remembered line goes stale, in matches: a run that far back is
+  # worth half a fresh one. Lower leans on what you ran last, higher on what
+  # you run most. See _zhimmer_hist_rank in sources/history.zsh.
+  history-halflife  10
   # Off unless asked for: this plugin is loaded for its menu, and taking over
   # the prompt of everyone who does that is not a trade they agreed to. See
   # lib/prompt.zsh.
