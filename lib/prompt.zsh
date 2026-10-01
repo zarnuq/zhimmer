@@ -219,7 +219,9 @@ typeset -gi _zhimmer_prompt_gen=0
 _zhimmer_prompt_cancel() {
   [[ -n $_zhimmer_prompt_fd ]] || return 0
   zle -F $_zhimmer_prompt_fd 2>/dev/null
-  exec {_zhimmer_prompt_fd}<&- 2>/dev/null
+  # Braced: on a bare `exec` every redirection is permanent, so `2>/dev/null`
+  # here would silence the shell's stderr for the rest of the session.
+  { exec {_zhimmer_prompt_fd}<&- } 2>/dev/null
   _zhimmer_prompt_fd=
   return 0
 }
@@ -251,7 +253,7 @@ _zhimmer_prompt_ready() {  # <fd>
   local fd=$1 line= gen= sym=
   read -r -u $fd line 2>/dev/null
   zle -F $fd 2>/dev/null
-  exec {fd}<&- 2>/dev/null
+  { exec {fd}<&- } 2>/dev/null  # braced, as in _zhimmer_prompt_cancel
   [[ $fd == $_zhimmer_prompt_fd ]] && _zhimmer_prompt_fd=
 
   [[ $line == *$'\t'* ]] || return 0
