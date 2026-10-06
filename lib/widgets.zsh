@@ -1,24 +1,52 @@
 # User-facing widgets. The completion widgets themselves live in complete.zsh.
 
-# self-insert is the busiest widget in the shell, and other plugins wrap it too
-# -- autopair, abbreviation expanders, anything that reacts to a character as it
-# is typed. Replacing it outright and calling `zle .self-insert` underneath drops
-# whatever was already there; copying the existing widget aside and calling the
-# copy keeps the chain, which is what accept-line and the completion widgets
-# already do.
+# Two ways to wrap a widget, both by name and never by key: which widget a key
+# reaches depends on the keymap -- with EDITOR=nvim zsh selects viins, where
+# backspace is vi-backward-delete-char and Right is vi-forward-char.
+#
+# Each wrapped widget gets a one-line stub calling a shared handler with the
+# widget to fall through to. Spelling the whole policy into `functions[...]`
+# instead put a copy of it in the shell per widget, each a string nothing could
+# syntax-check, differing only in a name.
+
+# Builtins only, called underneath as `zle .$w`. Anything else is skipped:
+# `zle .$w` would bypass another plugin's wrapper.
+_zhimmer_wrap_builtin() {  # <handler> <widget>...
+  local w
+  for w in ${@:2}; do
+    [[ ${widgets[$w]} == builtin ]] || continue
+    functions[.zhimmer-wrap-$w]="$1 .$w"
+    zle -N $w .zhimmer-wrap-$w
+  done
+}
+
+# Copied aside with `zle -A` and the copy called, which keeps whatever was
+# already there in the chain. self-insert is the busiest widget in the shell and
+# other plugins wrap it too -- autopair, abbreviation expanders, anything that
+# reacts to a character as it is typed -- so replacing it outright and calling
+# `zle .self-insert` underneath drops them. For the completion widgets it is the
+# only way at all: after compinit they are `completion:.expand-or-complete:
+# _main_complete`, and the dot-prefixed builtin behind them is zsh's own dumb
+# completion, with none of compsys behind it.
 #
 # Called at load and again after zsh-vi-mode's init, so the wrap survives
 # whatever loaded in between. The guard makes the second call a no-op unless
 # something has taken the widget since, in which case it wraps that instead.
-_zhimmer_wrap_self_insert() {
-  [[ ${widgets[self-insert]} == user:.zhimmer-self-insert ]] && return
-  zle -A self-insert .zhimmer-orig-self-insert
-  zle -N self-insert .zhimmer-self-insert
+_zhimmer_wrap_chain() {  # <handler> <widget>...
+  local w
+  for w in ${@:2}; do
+    (( ${+widgets[$w]} )) || continue
+    [[ ${widgets[$w]} == user:.zhimmer-wrap-$w ]] && continue
+    zle -A $w .zhimmer-orig-$w
+    functions[.zhimmer-wrap-$w]="$1 .zhimmer-orig-$w"
+    zle -N $w .zhimmer-wrap-$w
+  done
 }
 
-.zhimmer-self-insert() {
+# What self-insert and every widget that shortens or rewrites the line does.
+_zhimmer_refresh_with() {  # <widget>
   _zhimmer_zle_clear
-  zle .zhimmer-orig-self-insert
+  zle $1
   _zhimmer_maybe_show
 }
 
@@ -142,10 +170,8 @@ _zhimmer_note_menu() {
 }
 
 # Anything that shortens or rewrites the line has to refresh the menu and the
-# ghost, or both keep describing a prefix that is no longer there. Wrapping by
-# widget name rather than by key matters: which widget backspace reaches depends
-# on the keymap -- with EDITOR=nvim zsh selects viins, where it is
-# vi-backward-delete-char, not backward-delete-char.
+# ghost, or both keep describing a prefix that is no longer there: each of
+# these builtins is wrapped with _zhimmer_refresh_with.
 # This list is a convenience, not the guarantee -- see the redraw guard in
 # ghost.zsh, which catches whatever is missing from it. It was worth widening
 # anyway: ^U is vi-kill-line under viins, which zsh selects whenever EDITOR
@@ -164,20 +190,6 @@ typeset -ga ZHIMMER_REFRESH_WIDGETS=(
   vi-substitute           vi-put-after            vi-put-before
 )
 
-_zhimmer_wrap_refresh() {
-  local w
-  for w in $ZHIMMER_REFRESH_WIDGETS; do
-    # Only wrap builtins: `zle .$w` would bypass another plugin's wrapper.
-    [[ ${widgets[$w]} == builtin ]] || continue
-    functions[.zhimmer-refresh-$w]="
-      _zhimmer_zle_clear
-      zle .$w
-      _zhimmer_maybe_show
-    "
-    zle -N $w .zhimmer-refresh-$w
-  done
-}
-
 # The keys that take the ghost into the buffer, matching zsh-autosuggestions,
 # which zhimmer replaces: Right and Ctrl+F at end of line, plus Ctrl+E and End.
 # "Go to end of line" and "take the suggestion" mean the same thing when the
@@ -188,22 +200,14 @@ _zhimmer_wrap_refresh() {
 # gesture as accepting a whole remembered line.
 #
 # Anywhere but end of line these keys must still move the cursor, so the
-# original widget is called through. Wrapped by name for the same reason as the
-# refresh widgets: with EDITOR=nvim, Right is vi-forward-char, not forward-char.
+# original widget is called through.
 typeset -ga ZHIMMER_ACCEPT_WIDGETS=(
   forward-char  vi-forward-char
   end-of-line   vi-end-of-line   vi-add-eol
 )
 
-_zhimmer_wrap_accept() {
-  local w
-  for w in $ZHIMMER_ACCEPT_WIDGETS; do
-    [[ ${widgets[$w]} == builtin ]] || continue
-    functions[.zhimmer-accept-$w]="
-      _zhimmer_accept_ghost || zle .$w
-    "
-    zle -N $w .zhimmer-accept-$w
-  done
+_zhimmer_accept_with() {  # <widget>
+  _zhimmer_accept_ghost || zle $1
 }
 
 # The same keys again, a word at a time. Separate from the list above because
@@ -214,15 +218,8 @@ typeset -ga ZHIMMER_ACCEPT_WORD_WIDGETS=(
   forward-word  vi-forward-word  vi-forward-word-end  emacs-forward-word
 )
 
-_zhimmer_wrap_accept_word() {
-  local w
-  for w in $ZHIMMER_ACCEPT_WORD_WIDGETS; do
-    [[ ${widgets[$w]} == builtin ]] || continue
-    functions[.zhimmer-accept-word-$w]="
-      _zhimmer_accept_ghost_word .$w || zle .$w
-    "
-    zle -N $w .zhimmer-accept-word-$w
-  done
+_zhimmer_accept_word_with() {  # <widget>
+  _zhimmer_accept_ghost_word $1 || zle $1
 }
 
 # Tab belongs to zsh's completion system, not to zhimmer, so nothing refreshed
@@ -246,25 +243,8 @@ typeset -ga ZHIMMER_COMPLETE_WIDGETS=(
   menu-complete       menu-expand-or-complete
 )
 
-# Wrapped by copying the widget aside rather than by calling `zle .$w`: after
-# compinit these are completion widgets (`completion:.expand-or-complete:
-# _main_complete`), and the dot-prefixed builtin behind them is zsh's own dumb
-# completion, with none of compsys behind it.
+# Wrapped with _zhimmer_wrap_chain, never through `zle .$w` -- see there.
 #
-# The per-widget stub is one line calling the real function below. Spelling the
-# whole policy into `functions[...]` instead put five copies of it in the shell,
-# each a string nothing could syntax-check, differing only in a name.
-_zhimmer_wrap_complete() {
-  local w
-  for w in $ZHIMMER_COMPLETE_WIDGETS; do
-    (( ${+widgets[$w]} )) || continue
-    [[ ${widgets[$w]} == user:.zhimmer-after-$w ]] && continue
-    zle -A $w .zhimmer-orig-$w
-    functions[.zhimmer-after-$w]="_zhimmer_after_complete .zhimmer-orig-$w"
-    zle -N $w .zhimmer-after-$w
-  done
-}
-
 # Run one completion with zhimmer's rows out of the way and its display strings
 # in place, then decide what the listing area is left showing.
 _zhimmer_after_complete() {  # <saved-widget>

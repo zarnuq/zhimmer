@@ -42,11 +42,11 @@ zle -N zhimmer-step-back   .zhimmer-step-back
 zle -N zhimmer-down        .zhimmer-down
 zle -N zhimmer-up          .zhimmer-up
 zle -N zhimmer-magic-space .zhimmer-magic-space
-_zhimmer_wrap_self_insert
-_zhimmer_wrap_refresh
-_zhimmer_wrap_accept
-_zhimmer_wrap_accept_word
-_zhimmer_wrap_complete
+# Builtins, wrapped once. self-insert, accept-line and Tab's widgets are chained
+# from _zhimmer_bindkeys instead, which runs below and again after zsh-vi-mode.
+_zhimmer_wrap_builtin _zhimmer_refresh_with     $ZHIMMER_REFRESH_WIDGETS
+_zhimmer_wrap_builtin _zhimmer_accept_with      $ZHIMMER_ACCEPT_WIDGETS
+_zhimmer_wrap_builtin _zhimmer_accept_word_with $ZHIMMER_ACCEPT_WORD_WIDGETS
 
 _zhimmer_tame_lists
 
@@ -97,11 +97,11 @@ _zhimmer_bindkeys() {
   # here: sourcing zhimmer before compinit would otherwise lose it. self-insert
   # goes with it because this point is after zsh-vi-mode's init too, and the
   # guard makes it a no-op unless something in between has taken the widget.
-  _zhimmer_wrap_complete
-  _zhimmer_wrap_self_insert
+  _zhimmer_wrap_chain _zhimmer_after_complete $ZHIMMER_COMPLETE_WIDGETS
+  _zhimmer_wrap_chain _zhimmer_refresh_with self-insert
   # Enter expands a bare alias too. Done here, after zsh-vi-mode's init, so the
   # chain wraps vi-mode's accept-line rather than being wiped by it.
-  _zhimmer_wrap_acceptline
+  _zhimmer_wrap_chain _zhimmer_accept_line_with accept-line
   # Inside the menu. Esc is bound there and deliberately nowhere else -- it is
   # zsh-vi-mode's normal-mode switch, and it prefixes every arrow-key sequence.
   _zhimmer_bind_menuselect
