@@ -651,6 +651,22 @@ is   "a .git file is followed to the real gitdir" "$REPLY" "linked"
 cd $_pdir
 holds "and a directory outside any repository has no branch" \
   eval '_zhimmer_prompt_branch; [[ -z $REPLY ]]'
+
+# The exit status is read on precmd's first line and baked into the string.
+false; _zhimmer_prompt_precmd
+holds "a failed command colours the prompt symbol as an error" \
+  eval '[[ $PROMPT == *"%F{$ZHIMMER_PROMPT_COLORS[error]}"* && $PROMPT != *"%F{$ZHIMMER_PROMPT_COLORS[branch]}"* ]]'
+true; _zhimmer_prompt_precmd
+holds "and a successful one as ok" eval '[[ $PROMPT == *"%F{$ZHIMMER_PROMPT_COLORS[ok]}"* ]]'
+
+# A % in a branch name is a prompt escape unless doubled.
+print 'ref: refs/heads/feat/100%done' > $_pdir/repo/.git/HEAD
+cd $_pdir/repo
+zstyle ':zhimmer:*' prompt-async no
+_zhimmer_prompt_precmd
+zstyle -d ':zhimmer:*' prompt-async
+is   "a % in the branch is escaped in PROMPT" "${${PROMPT#*%F\{$ZHIMMER_PROMPT_COLORS[branch]\}}%%\%f*}" 'feat/100%%done'
+cd $_pdir
 cd $_pwd_was
 rm -rf $_pdir
 

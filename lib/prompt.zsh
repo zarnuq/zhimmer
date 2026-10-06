@@ -178,7 +178,6 @@ _zhimmer_prompt_symbols() {  # <git status --porcelain=v1 --branch text> -> REPL
 # which is what makes a prompt's `git status` fight a `git commit` in another
 # pane of the same repository.
 _zhimmer_prompt_git_query() {  # -> REPLY
-  REPLY=
   _zhimmer_prompt_symbols \
     "$(GIT_OPTIONAL_LOCKS=0 command git status --porcelain=v1 --branch 2>/dev/null)"
 }
@@ -282,28 +281,23 @@ _zhimmer_prompt_precmd() {
   local REPLY
 
   _zhimmer_prompt_git=
-  if _zhimmer_prompt_branch; then
-    _zhimmer_prompt_br=$REPLY
+  _zhimmer_prompt_branch       # REPLY is empty outside a repository
+  _zhimmer_prompt_br=$REPLY
+
+  if [[ -z $_zhimmer_prompt_br ]]; then
+    _zhimmer_prompt_cancel
+  elif _zhimmer_bool prompt-async; then
+    _zhimmer_prompt_start
   else
-    _zhimmer_prompt_br=
+    _zhimmer_prompt_git_query
+    _zhimmer_prompt_git=$REPLY
   fi
 
   # Drawn now, with whatever costs nothing. The symbols land later, or -- in a
   # small repository, where the child finishes before the line editor starts --
-  # so soon after that there is nothing to see.
+  # so soon after that there is nothing to see. (The handler is a `zle -F` one,
+  # so it cannot run before this does.)
   _zhimmer_prompt_build
-
-  if [[ -n $_zhimmer_prompt_br ]]; then
-    if _zhimmer_bool prompt-async; then
-      _zhimmer_prompt_start
-    else
-      _zhimmer_prompt_git_query
-      _zhimmer_prompt_git=$REPLY
-      _zhimmer_prompt_build
-    fi
-  else
-    _zhimmer_prompt_cancel
-  fi
   return 0
 }
 
@@ -316,7 +310,7 @@ typeset -g _zhimmer_prompt_saved=
 zhimmer-prompt-on() {
   (( _zhimmer_prompt_on )) && return 0
   autoload -Uz add-zsh-hook
-  typeset -g _zhimmer_prompt_saved=$PROMPT
+  _zhimmer_prompt_saved=$PROMPT
   add-zsh-hook precmd _zhimmer_prompt_precmd
   _zhimmer_prompt_on=1
   return 0
@@ -324,7 +318,6 @@ zhimmer-prompt-on() {
 
 zhimmer-prompt-off() {
   (( _zhimmer_prompt_on )) || return 0
-  autoload -Uz add-zsh-hook
   add-zsh-hook -d precmd _zhimmer_prompt_precmd
   _zhimmer_prompt_cancel
   PROMPT=$_zhimmer_prompt_saved
