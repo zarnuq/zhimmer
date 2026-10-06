@@ -8,9 +8,7 @@
 # Re-read when the file's mtime moves, which is the same free check the ssh
 # source uses; without zsh/stat the stamp stays empty and the file is read once
 # per directory.
-zmodload -F zsh/stat b:zstat 2>/dev/null
-
-typeset -g _zhimmer_make_at= _zhimmer_make_dir=
+typeset -g _zhimmer_make_at=
 typeset -ga _zhimmer_make_targets_c=()
 
 # A target line starts in the first column and has a `:` before any `=`. The
@@ -44,11 +42,11 @@ _zhimmer_make_load() {
   for f in Makefile makefile GNUmakefile; do
     [[ -r $f ]] && { found=$f; break }
   done
-  local -a st
-  local stamp=
-  [[ -n $found ]] && zstat -A st +mtime $found 2>/dev/null && stamp=$st[1]
-  [[ $_zhimmer_make_at == "$found:$stamp" && $_zhimmer_make_dir == $PWD ]] && return
-  _zhimmer_make_at="$found:$stamp" _zhimmer_make_dir=$PWD
+  local REPLY
+  _zhimmer_mtime $found
+  # $PWD last: the parts before it hold no `:`, so the key cannot collide.
+  [[ $_zhimmer_make_at == "$found:$REPLY:$PWD" ]] && return
+  _zhimmer_make_at="$found:$REPLY:$PWD"
 
   local -a reply
   if [[ -n $found ]] && _zhimmer_make_targets "$(<$found)"; then
@@ -63,7 +61,5 @@ _zhimmer_source_make() {
   [[ $words[1] == (make|gmake) ]] || return
   local -i limit=$1
   _zhimmer_make_load
-  local -a reply
-  _zhimmer_pick $limit ${(M)_zhimmer_make_targets_c:#${(b)PREFIX}*} || return
-  _zhimmer_addwords zhimmer-make target "$reply[@]"
+  _zhimmer_addpicked zhimmer-make target $limit _zhimmer_make_targets_c
 }

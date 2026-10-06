@@ -8,9 +8,7 @@
 #
 # The cost of being wrong is a missing row in a menu, not a broken command, so
 # this trades a parser nobody can maintain for one that fits on a screen.
-zmodload -F zsh/stat b:zstat 2>/dev/null
-
-typeset -g _zhimmer_npm_at= _zhimmer_npm_dir=
+typeset -g _zhimmer_npm_at=
 typeset -ga _zhimmer_npm_scripts_c=()
 
 # The keys of the "scripts" object. The first quoted string on a line is the
@@ -35,11 +33,10 @@ _zhimmer_npm_scripts() {  # <package.json text>  -> reply
 }
 
 _zhimmer_npm_load() {
-  local -a st
-  local stamp=
-  [[ -r package.json ]] && zstat -A st +mtime package.json 2>/dev/null && stamp=$st[1]
-  [[ $_zhimmer_npm_at == "$stamp" && $_zhimmer_npm_dir == $PWD ]] && return
-  _zhimmer_npm_at=$stamp _zhimmer_npm_dir=$PWD
+  local REPLY
+  _zhimmer_mtime package.json
+  [[ $_zhimmer_npm_at == "$REPLY:$PWD" ]] && return
+  _zhimmer_npm_at="$REPLY:$PWD"
 
   local -a reply
   if [[ -r package.json ]] && _zhimmer_npm_scripts "$(<package.json)"; then
@@ -56,7 +53,5 @@ _zhimmer_source_npm-script() {
   [[ $words[1] == (npm|pnpm|yarn|bun) && $words[2] == (run|run-script) ]] || return
   local -i limit=$1
   _zhimmer_npm_load
-  local -a reply
-  _zhimmer_pick $limit ${(M)_zhimmer_npm_scripts_c:#${(b)PREFIX}*} || return
-  _zhimmer_addwords zhimmer-npm-script script "$reply[@]"
+  _zhimmer_addpicked zhimmer-npm-script script $limit _zhimmer_npm_scripts_c
 }
