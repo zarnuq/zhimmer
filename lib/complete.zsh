@@ -235,7 +235,7 @@ _zhimmer_pick() {  # <limit> <candidate>...  -> reply
 # never made.
 _zhimmer_addpicked() {  # <group> <label> <limit> <array name>
   local -a reply
-  _zhimmer_pick $3 ${(M)${(P)4}:#${(b)PREFIX}*} || return
+  _zhimmer_pick $3 ${(M)${(P)4}:#${~${(b)PREFIX}}*} || return
   _zhimmer_addwords $1 $2 "$reply[@]"
 }
 

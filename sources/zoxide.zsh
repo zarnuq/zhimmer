@@ -28,7 +28,7 @@ _zhimmer_source_zoxide() {
   #
   # Cut without sorting: this list arrives ranked by frecency, and that ranking
   # is the whole reason to ask zoxide rather than glob the filesystem.
-  local -a d=( ${(M)_zhimmer_zoxide_dirs:#*${(b)PREFIX}*} )
+  local -a d=( ${(M)_zhimmer_zoxide_dirs:#*${~${(b)PREFIX}}*} )
   (( $#d )) || return
   _zhimmer_addwords zhimmer-zoxide zoxide "${(@)d[1,limit]}"
 }

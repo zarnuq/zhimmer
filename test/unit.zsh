@@ -518,6 +518,10 @@ _drew=(); PREFIX=fo; _zhimmer_addpicked g lbl 1 _cands
 is "cut to the limit" "${(j:|:)_drew}" 'g|lbl|fob'
 PREFIX=zz
 fails_ "no match draws nothing" _zhimmer_addpicked g lbl 10 _cands
+# (b) quotes the word with backslashes, and without $~ the filter matches those
+# backslashes literally: `f[` found `f\[y` and missed `f[x`.
+_cands=( 'f[x' 'f\[y' ); _drew=(); PREFIX='f['; _zhimmer_addpicked g lbl 10 _cands
+is "a [ typed is a character to match" "${(j:|:)_drew}" 'g|lbl|f[x'
 _zhimmer_addwords() { typeset -g _zhimmer_drawn=$2 }
 
 _zhimmer_mtime $root/test/unit.zsh
