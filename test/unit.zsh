@@ -802,6 +802,25 @@ is   "each row remembers the buffer it would leave" "$_zhimmer_zbuf[5]" "cat ./a
 _zhimmer_zle_reset
 is   "reset clears the rows"                   "$#_zhimmer_zrow"      "0"
 
+print "== widget wrapping =="
+# zle -N and zle -A only register names, so they work without a line editor.
+# _zhimmer_bindkeys runs twice under zsh-vi-mode; the second chain must be a
+# no-op, or the copy aside is overwritten with zhimmer's own stub and calls itself.
+zmodload zsh/zle
+source $root/lib/widgets.zsh
+_zt_other() { }
+zle -N zt-chained _zt_other
+_zhimmer_wrap_chain _zhimmer_refresh_with zt-chained zt-missing
+_zhimmer_wrap_chain _zhimmer_refresh_with zt-chained
+is   "a chained widget is replaced by its stub"   "${widgets[zt-chained]}"        "user:.zhimmer-wrap-zt-chained"
+is   "and the copy aside is still the original"   "${widgets[.zhimmer-orig-zt-chained]}" "user:_zt_other"
+is   "the stub calls the handler with the copy"   "${functions[.zhimmer-wrap-zt-chained]//[[:space:]]/}" "_zhimmer_refresh_with.zhimmer-orig-zt-chained"
+is   "a widget that does not exist is left alone" "${+widgets[zt-missing]}"       "0"
+zle -N zt-user _zt_other
+_zhimmer_wrap_builtin _zhimmer_accept_with zt-user forward-char
+is   "builtin wrapping skips a user widget"       "${widgets[zt-user]}"           "user:_zt_other"
+is   "and wraps a builtin, calling .name below"   "${functions[.zhimmer-wrap-forward-char]//[[:space:]]/}" "_zhimmer_accept_with.forward-char"
+
 print
 if (( fails )); then
   finished=1

@@ -63,13 +63,9 @@ _zhimmer_expand_alias() {
 # Enter: expand a bare alias so the command that runs -- and lands in history --
 # is the real one. Chains onto whatever accept-line already is (zsh-vi-mode,
 # zsh-syntax-highlighting) instead of clobbering it.
-_zhimmer_wrap_acceptline() {
-  [[ ${widgets[accept-line]} == user:.zhimmer-accept-line ]] && return
-  zle -A accept-line .zhimmer-orig-accept-line
-  functions[.zhimmer-accept-line]='
-    _zhimmer_zle_accept && return
-    _zhimmer_expand_alias
-    zle .zhimmer-orig-accept-line
-  '
-  zle -N accept-line .zhimmer-accept-line
+# Wrapped with _zhimmer_wrap_chain.
+_zhimmer_accept_line_with() {  # <widget>
+  _zhimmer_zle_accept && return
+  _zhimmer_expand_alias
+  zle $1
 }
