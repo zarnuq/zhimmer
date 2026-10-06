@@ -53,7 +53,6 @@ _zhimmer_zle_reset() {
 _zhimmer_zle_window() {  # <total> <selected> <height> <current-first> -> reply
   local -i n=$1 sel=$2 h=$3 first=$4
   (( h < 1 )) && h=1
-  (( first < 1 )) && first=1
   typeset -ga reply
   (( n <= h )) && { reply=( 1 $n ); return }
   (( sel && sel < first ))         && first=$sel
@@ -64,11 +63,9 @@ _zhimmer_zle_window() {  # <total> <selected> <height> <current-first> -> reply
 }
 
 # Add one row. Called by the group helpers in complete.zsh, which is the only
-# thing that knows a group is being drawn at all.
-_zhimmer_zle_header() {  # <label>
-  _zhimmer_zrow+=( "$1" ); _zhimmer_zkind+=( '' ); _zhimmer_zbuf+=( '' )
-}
-_zhimmer_zle_match() {   # <row text> <group> <resulting buffer>
+# thing that knows a group is being drawn at all. A row with no group is a
+# header.
+_zhimmer_zle_add() {  # <row text> [<group> <resulting buffer>]
   _zhimmer_zrow+=( "$1" ); _zhimmer_zkind+=( "$2" ); _zhimmer_zbuf+=( "$3" )
 }
 
@@ -81,7 +78,6 @@ _zhimmer_zle_match() {   # <row text> <group> <resulting buffer>
 # is what stops a list of nothing but headers spinning forever.
 _zhimmer_zle_next() {  # <from> <step> -> REPLY, 0 when there is nothing to take
   local -i i=$1 step=$2 n=$#_zhimmer_zrow lap
-  (( n )) || { REPLY=0; return 1 }
   for (( lap = 0; lap < n; lap++ )); do
     (( i += step ))
     (( i > n )) && i=1
@@ -236,7 +232,6 @@ _zhimmer_zle_clear() {
 # on the first row and Up on the last -- which is how Up opens the menu at all,
 # rather than falling through to history navigation.
 _zhimmer_zle_move() {  # <step>
-  (( $#_zhimmer_zrow )) || return 1
   local REPLY
   _zhimmer_zle_next $_zhimmer_zsel $1 || return 1
   _zhimmer_zsel=$REPLY
