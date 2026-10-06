@@ -4,13 +4,7 @@
 # no `ssh --list-hosts`, and the alternatives all fork. ~/.ssh/config is short;
 # known_hosts is not -- a few thousand lines is ordinary -- so neither is read
 # again while its mtime is unchanged, which for these two files means once per
-# shell in practice.
-#
-# zsh/stat is what makes that check free. Without it the stamp stays empty, the
-# cache never invalidates, and the hosts are read exactly once -- which is the
-# same answer for anyone not editing their ssh config mid-session.
-zmodload -F zsh/stat b:zstat 2>/dev/null
-
+# shell in practice. See _zhimmer_mtime for what happens without zsh/stat.
 typeset -g _zhimmer_ssh_at=
 typeset -ga _zhimmer_ssh_hosts=()
 
@@ -61,10 +55,9 @@ _zhimmer_known_hosts() {  # <~/.ssh/known_hosts text>  -> reply
 }
 
 _zhimmer_ssh_load() {
-  local -a st
-  local f stamp=
+  local f stamp= REPLY
   for f in $HOME/.ssh/config $HOME/.ssh/known_hosts; do
-    zstat -A st +mtime $f 2>/dev/null && stamp+=$st[1]:
+    _zhimmer_mtime $f && stamp+=$REPLY:
   done
   [[ $_zhimmer_ssh_at == $stamp ]] && (( $#_zhimmer_ssh_hosts )) && return
   _zhimmer_ssh_at=$stamp
@@ -88,7 +81,5 @@ _zhimmer_source_ssh-host() {
   # there is no `:` in the word: `scp file host:` is past choosing one.
   [[ $PREFIX == *:* ]] && return
   _zhimmer_ssh_load
-  local -a reply
-  _zhimmer_pick $limit ${(M)_zhimmer_ssh_hosts:#${(b)PREFIX}*} || return
-  _zhimmer_addwords zhimmer-ssh-host host "$reply[@]"
+  _zhimmer_addpicked zhimmer-ssh-host host $limit _zhimmer_ssh_hosts
 }

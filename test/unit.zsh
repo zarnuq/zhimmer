@@ -507,6 +507,24 @@ is "a real prefix does" "$_zhimmer_drawn" 'history'
 _zhimmer_hist_q=; _zhimmer_hist_rank '   ' 5
 is "the ranking treats whitespace as no query at all" $#reply 0
 
+# The cached-array sources hand their list over by name. Recorded whole here,
+# since the stub above keeps only the label.
+print '\n== picking from a named array =='
+_zhimmer_addwords() { typeset -ga _drew=( "$@" ) }
+_cands=( foo bar fob )
+_drew=(); PREFIX=fo; _zhimmer_addpicked g lbl 10 _cands
+is "prefix-matched, sorted, under group and label" "${(j:|:)_drew}" 'g|lbl|fob|foo'
+_drew=(); PREFIX=fo; _zhimmer_addpicked g lbl 1 _cands
+is "cut to the limit" "${(j:|:)_drew}" 'g|lbl|fob'
+PREFIX=zz
+fails_ "no match draws nothing" _zhimmer_addpicked g lbl 10 _cands
+_zhimmer_addwords() { typeset -g _zhimmer_drawn=$2 }
+
+_zhimmer_mtime $root/test/unit.zsh
+holds "an mtime comes back for a file that exists" eval '[[ $REPLY == <-> ]]'
+fails_ "and none for one that does not" _zhimmer_mtime $root/no/such/file
+is "  leaving REPLY empty" "$REPLY" ''
+
 # ----------------------------------------------- features that switch off ---
 #
 # Every yes/no setting has to actually gate something. A style nobody reads is
@@ -714,7 +732,7 @@ is "the two spellings of the selection bar agree" "$ZHIMMER_SELECT" "48;${REPLY#
 # Read out of the sources rather than listed here, so a source added without a
 # colour is caught rather than described.
 _pairs=(); _w=()
-for _l in ${(f)"$(rg -oN '_zhimmer_add(group|words) [^ ]+ [^ ]+' $root/sources/*.zsh)"}; do
+for _l in ${(f)"$(rg -oN '_zhimmer_add(group|words|picked) [^ ]+ [^ ]+' $root/sources/*.zsh)"}; do
   _w=( ${(z)_l} )
   # git-branch builds both strings from a variable -- one call site, two groups
   # -- and a grep cannot resolve that, so it is the one named here.

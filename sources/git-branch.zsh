@@ -9,7 +9,7 @@
 #
 # One call covers both namespaces. Asking for heads and remotes separately
 # would double the fork this whole arrangement exists to avoid.
-typeset -g _zhimmer_git_at= _zhimmer_git_dir=
+typeset -g _zhimmer_git_at=
 typeset -ga _zhimmer_git_heads=() _zhimmer_git_remotes=() _zhimmer_git_rbranches=()
 
 # Full refnames in, three lists out. Kept apart from the fork so it can be
@@ -45,10 +45,10 @@ _zhimmer_git_refs() {  # <refname per line>
 }
 
 _zhimmer_git_load() {
-  [[ $_zhimmer_git_at == $HISTCMD && $_zhimmer_git_dir == $PWD ]] && return
+  [[ $_zhimmer_git_at == $HISTCMD:$PWD ]] && return
   _zhimmer_git_refs \
     "$(git for-each-ref --format='%(refname)' refs/heads refs/remotes 2>/dev/null)"
-  _zhimmer_git_at=$HISTCMD _zhimmer_git_dir=$PWD
+  _zhimmer_git_at=$HISTCMD:$PWD
 }
 
 _zhimmer_source_git-branch() {
@@ -88,7 +88,5 @@ _zhimmer_source_git-branch() {
   # Cut to the limit like every other source. Without it a repository with a few
   # hundred branches put all of them in the menu, which has no row budget of its
   # own -- it scrolls, so nothing stopped them.
-  local -a reply
-  _zhimmer_pick $limit ${(M)cands:#${(b)PREFIX}*} || return
-  _zhimmer_addwords zhimmer-git-$group $group "$reply[@]"
+  _zhimmer_addpicked zhimmer-git-$group $group $limit cands
 }

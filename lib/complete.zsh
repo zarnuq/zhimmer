@@ -228,6 +228,28 @@ _zhimmer_pick() {  # <limit> <candidate>...  -> reply
   (( $#reply ))
 }
 
+# The whole tail of every source that keeps its candidates in a cached array:
+# prefix-match against the word being typed, pick, draw. The array is passed by
+# name: known_hosts runs to thousands of lines, and expanding all of them into
+# argv only to filter them here would be a copy per keystroke the inline filter
+# never made.
+_zhimmer_addpicked() {  # <group> <label> <limit> <array name>
+  local -a reply
+  _zhimmer_pick $3 ${(M)${(P)4}:#${(b)PREFIX}*} || return
+  _zhimmer_addwords $1 $2 "$reply[@]"
+}
+
+# A file's mtime in REPLY, for the sources that cache what they parse out of a
+# file. zsh/stat is what makes the check free. Without it REPLY stays empty, the
+# caches keyed on it never invalidate, and each file is read once -- the same
+# answer for anyone not editing it mid-session.
+zmodload -F zsh/stat b:zstat 2>/dev/null
+_zhimmer_mtime() {  # <file>  -> REPLY
+  local -a st
+  REPLY=
+  zstat -A st +mtime $1 2>/dev/null && REPLY=$st[1]
+}
+
 # Claim rows from the shared budget: one for the group header plus as many as
 # are left for its matches. Answers in _zhimmer_taken rather than on stdout --
 # a $( ) here would run in a subshell and silently discard the decrement.

@@ -6,7 +6,7 @@
 # same reason -- this is a fork, and a source is asked on every keystroke. The
 # working tree does change under a command, which is exactly what HISTCMD moves
 # on.
-typeset -g _zhimmer_gitfile_at= _zhimmer_gitfile_dir=
+typeset -g _zhimmer_gitfile_at=
 typeset -ga _zhimmer_gitfile_paths=()
 
 # Porcelain v1 in, paths out. Two columns of status, a space, then the path;
@@ -27,7 +27,7 @@ _zhimmer_git_status_paths() {  # <git status --porcelain text>  -> reply
 }
 
 _zhimmer_gitfile_load() {
-  [[ $_zhimmer_gitfile_at == $HISTCMD && $_zhimmer_gitfile_dir == $PWD ]] && return
+  [[ $_zhimmer_gitfile_at == $HISTCMD:$PWD ]] && return
   local -a reply
   # Relative to the current directory, not the repository root: the path is
   # going into a command line typed here, and `../` prefixes on everything are
@@ -37,7 +37,7 @@ _zhimmer_gitfile_load() {
   else
     _zhimmer_gitfile_paths=()
   fi
-  _zhimmer_gitfile_at=$HISTCMD _zhimmer_gitfile_dir=$PWD
+  _zhimmer_gitfile_at=$HISTCMD:$PWD
 }
 
 _zhimmer_source_git-file() {
@@ -46,7 +46,5 @@ _zhimmer_source_git-file() {
   [[ $words[2] == (add|stage|restore|rm|diff|checkout|reset|stash) ]] || return
   local -i limit=$1
   _zhimmer_gitfile_load
-  local -a reply
-  _zhimmer_pick $limit ${(M)_zhimmer_gitfile_paths:#${(b)PREFIX}*} || return
-  _zhimmer_addwords zhimmer-git-file changed "$reply[@]"
+  _zhimmer_addpicked zhimmer-git-file changed $limit _zhimmer_gitfile_paths
 }
