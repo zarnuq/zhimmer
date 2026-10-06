@@ -463,6 +463,34 @@ is "npm: script names only, values and later objects left alone" "${(j:,:)reply}
 fails_ "a package.json with no scripts reports so" _zhimmer_npm_scripts '{ "name": "x" }'
 fails_ "and a makefile with no targets does too"   _zhimmer_make_targets 'CC := gcc'
 
+# ------------------------------------------------------------ group helpers ---
+#
+# Both helpers end in _zhimmer_emit, which claims the group's share of the
+# shared row budget -- a header plus whatever is left -- and offers its top row
+# as the ghost. Here, before the stubs below replace them.
+print '\n== group helpers =='
+_zhimmer_zle_reset; _zhimmer_top=; _zhimmer_top_rank=0; _zhimmer_budget=4
+_zhimmer_addgroup zhimmer-history history 'git status' 'git stash' 'git switch' 'git show'
+is "a group takes a header and what is left of the budget" "$#_zhimmer_zrow" 4
+is "the header is a row with no group"                     "$_zhimmer_zkind[1]" ''
+is "and the budget is spent"                               "$_zhimmer_budget" 0
+is "its top row is offered as the ghost"                   "$_zhimmer_top" 'git status'
+_zhimmer_addgroup zhimmer-history history 'git log'
+is "a spent budget draws no further group"                 "$#_zhimmer_zrow" 4
+_zhimmer_budget=10
+_zhimmer_addgroup zhimmer-history history
+is "and an empty group draws no header"                    "$#_zhimmer_zrow" 4
+
+_zhimmer_zle_reset; _zhimmer_budget=10
+LBUFFER='git sw' PREFIX=sw RBUFFER=' -q'
+_zhimmer_addwords zhimmer-alias alias swa '' -- 'swa  →  switch' 'empty'
+is "a word row shows the row given after --"   "$_zhimmer_zrow[2]" 'swa  →  switch'
+is "and leaves the line around the word"       "$_zhimmer_zbuf[2]" 'git swa -q'
+is "an empty match keeps its place"            "$_zhimmer_zbuf[3]" 'git  -q'
+_zhimmer_addwords zhimmer-command command
+is "no matches, no group"                      "$#_zhimmer_zrow" 3
+LBUFFER= PREFIX= RBUFFER=
+
 # ------------------------------------------------------ an empty word is not ---
 #
 # A source that keys only off the word being typed needs a word. With none, the
@@ -772,11 +800,11 @@ print "== zle menu: selectable rows =="
 # Headers are rows on screen but are never selectable, so movement steps over
 # them -- otherwise Down would land on ' history' and Enter would take it.
 _zhimmer_zle_reset
-_zhimmer_zle_header history
-_zhimmer_zle_match 'echo one' history 'echo one'
-_zhimmer_zle_match 'echo two' history 'echo two'
-_zhimmer_zle_header file
-_zhimmer_zle_match './a' file 'cat ./a'
+_zhimmer_zle_add history
+_zhimmer_zle_add 'echo one' history 'echo one'
+_zhimmer_zle_add 'echo two' history 'echo two'
+_zhimmer_zle_add file
+_zhimmer_zle_add './a' file 'cat ./a'
 is   "rows and headers are all drawn"          "$#_zhimmer_zrow"      "5"
 _zhimmer_zle_next 0 1;  is "the first match is found past the header"  "$REPLY" "2"
 _zhimmer_zle_next 2 1;  is "and the next one after it"                 "$REPLY" "3"
@@ -789,15 +817,15 @@ _zhimmer_zle_next 2 -1; is "and back off the first row to the last"    "$REPLY" 
 _zhimmer_zle_next 0 1;  is "from nothing, Down takes the first row"    "$REPLY" "2"
 _zhimmer_zle_next 0 -1; is "and Up takes the last"                     "$REPLY" "5"
 # A list of nothing but headers has nothing to take, and must not spin.
-_zhimmer_zle_reset; _zhimmer_zle_header history
+_zhimmer_zle_reset; _zhimmer_zle_add history
 fails_ "a list with no matches yields none"    _zhimmer_zle_next 0 1
 fails_ "in either direction"                   _zhimmer_zle_next 0 -1
 _zhimmer_zle_reset
-_zhimmer_zle_header history
-_zhimmer_zle_match 'echo one' history 'echo one'
-_zhimmer_zle_match 'echo two' history 'echo two'
-_zhimmer_zle_header file
-_zhimmer_zle_match './a' file 'cat ./a'
+_zhimmer_zle_add history
+_zhimmer_zle_add 'echo one' history 'echo one'
+_zhimmer_zle_add 'echo two' history 'echo two'
+_zhimmer_zle_add file
+_zhimmer_zle_add './a' file 'cat ./a'
 is   "each row remembers the buffer it would leave" "$_zhimmer_zbuf[5]" "cat ./a"
 _zhimmer_zle_reset
 is   "reset clears the rows"                   "$#_zhimmer_zrow"      "0"

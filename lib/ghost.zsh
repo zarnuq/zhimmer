@@ -56,19 +56,10 @@ _zhimmer_ghost_guard() {
 # It reads _zhimmer_zghost and not POSTDISPLAY, which also holds every row of
 # the menu: appending that put the header rule and all its rows into BUFFER,
 # and the result looked on screen exactly like the menu still being open.
-_zhimmer_accept_ghost() {
-  [[ -n $_zhimmer_zghost && -z $RBUFFER ]] || return 1
-  local g=$_zhimmer_zghost
-  _zhimmer_zle_clear
-  BUFFER=$BUFFER$g
-  CURSOR=${#BUFFER}
-  _zhimmer_maybe_show
-  return 0
-}
-
-# Take one word of the ghost instead of all of it -- the habit a switcher from
-# zsh-autosuggestions would otherwise lose, and the difference between running
-# `git push --force` and `git push --force-with-lease origin feature`.
+#
+# Given a widget, it takes one word of the ghost instead of all of it -- the
+# habit a switcher from zsh-autosuggestions would otherwise lose, and the
+# difference between running `git push --force` and `git push --force-with-lease origin feature`.
 #
 # Where a word ends is not decided here. The line is temporarily made whole,
 # suggestion and all, and the user's own word widget is run on it, so WORDCHARS,
@@ -76,25 +67,22 @@ _zhimmer_accept_ghost() {
 # where the cursor lands. Splitting the string here with a pattern of our own
 # would answer differently from the same key pressed one character later, on
 # text that is really in the buffer.
-#
-# Returns non-zero when there is no ghost to take, so the caller falls through
-# to what the key normally does.
-_zhimmer_accept_ghost_word() {  # <widget to move by>
+_zhimmer_accept_ghost() {  # [<widget to move by>]
   [[ -n $_zhimmer_zghost && -z $RBUFFER ]] || return 1
   local whole=$BUFFER$_zhimmer_zghost
   local -i orig=${#BUFFER}
 
   _zhimmer_zle_clear
   BUFFER=$whole          # assigned before the cursor: BUFFER= can move CURSOR
-  CURSOR=$orig
-  zle $1
-
-  # The widget declined to move into the suggestion -- already at the last word,
-  # or a motion that stops short. Nothing is taken and the line is left as it
-  # was; the redraw below puts the same ghost back.
-  (( CURSOR > orig )) || CURSOR=$orig
-
-  BUFFER=${whole[1,CURSOR]}
+  if (( $# )); then
+    CURSOR=$orig
+    zle $1
+    # The widget declined to move into the suggestion -- already at the last
+    # word, or a motion that stops short. Nothing is taken and the line is left
+    # as it was; the redraw below puts the same ghost back.
+    (( CURSOR > orig )) || CURSOR=$orig
+    BUFFER=${whole[1,CURSOR]}
+  fi
   CURSOR=${#BUFFER}
   # Regenerated rather than sliced out of `whole`. It costs one keystroke's
   # work on a key pressed rarely, and it is the only way the list under the
@@ -102,6 +90,7 @@ _zhimmer_accept_ghost_word() {  # <widget to move by>
   _zhimmer_maybe_show
   return 0
 }
+_zhimmer_accept_ghost_word() { _zhimmer_accept_ghost $1 }  # widgets.zsh's name
 
 # Every line starts and ends with nothing of zhimmer's on screen and no mode
 # left over. Two hooks, one function.

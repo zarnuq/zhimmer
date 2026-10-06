@@ -62,16 +62,10 @@ typeset -gi _zhimmer_search=0
 # them -- so what the widget itself would list is always empty.
 .zhimmer-complete() {
   _zhimmer_zle_reset
-  local -a srcs
   # A search asks one question, so it gets one answer. Offering the files in
   # this directory alongside the remembered lines that contain what was typed
   # is two different searches sharing a screen.
-  if (( _zhimmer_search )); then
-    srcs=( history )
-  else
-    zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
-  fi
-
+  #
   # A cap on the total rows, shared across every group -- without it the
   # per-source limit multiplies, and eleven sources at ten each is a hundred
   # and ten rows built on every keystroke.
@@ -89,11 +83,14 @@ typeset -gi _zhimmer_search=0
   # worth, which puts the sources named first (history, by convention) ahead of
   # the rest when the budget runs out.
   local REPLY
+  local -a srcs
   local -i limit
   if (( _zhimmer_search )); then
+    srcs=( history )
     _zhimmer_cfg search-suggestions; limit=$REPLY
     typeset -g _zhimmer_budget=$(( limit + 1 ))    # the rows, plus their header
   else
+    zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
     _zhimmer_cfg max-suggestions; limit=$REPLY
     typeset -g _zhimmer_budget=$(( limit * 5 ))
   fi
@@ -108,7 +105,7 @@ typeset -gi _zhimmer_search=0
   # A search that found nothing still says so. With the rows gone there is
   # otherwise nothing on screen saying the mode is on -- and it changes what
   # Enter does, so it has to be visible even when it has nothing to offer.
-  (( _zhimmer_search && ! $#_zhimmer_zrow )) && _zhimmer_zle_header 'search: no match'
+  (( _zhimmer_search && ! $#_zhimmer_zrow )) && _zhimmer_zle_add 'search: no match'
   return 0
 }
 
@@ -117,18 +114,12 @@ typeset -gi _zhimmer_search=0
 #
 #   _zhimmer_addgroup <group> <label> <full-line>...
 _zhimmer_addgroup() {
-  local group=$1 name=$2; shift 2
-  (( $# )) || return
-  _zhimmer_take $#
-  (( _zhimmer_taken )) || return
-  set -- "${@[1,_zhimmer_taken]}"
-  _zhimmer_offer_ghost $name "$1"
   # Shown and taken are the same string here, which is what makes this the
   # simple case: a remembered line replaces the whole buffer. Copied to a named
   # array first -- `argv` inside _zhimmer_emit is its own positional list, not
   # this one.
-  local -a lines=( "$@" )
-  _zhimmer_emit $group $name lines lines
+  local -a lines=( "${(@)argv[3,-1]}" )
+  _zhimmer_emit $1 $2 lines lines
 }
 
 # Add a group of word-level candidates -- ones that replace just the current
@@ -150,20 +141,11 @@ _zhimmer_addgroup() {
 # means the command line two files over and the match list inside this one.
 _zhimmer_addwords() {
   local group=$1 name=$2; shift 2
-  local -a matches=( "$@" ) rows=()
+  local -a matches=( "$@" ) rows=( "$@" )
   local -i sep=$argv[(i)--]
   if (( sep <= $# )); then
     matches=( "${(@)argv[1,sep-1]}" )
     rows=( "${(@)argv[sep+1,-1]}" )
-  fi
-  (( $#matches )) || return
-  _zhimmer_take $#matches
-  (( _zhimmer_taken )) || return
-  matches=( "${(@)matches[1,_zhimmer_taken]}" )
-  if (( $#rows )); then
-    rows=( "${(@)rows[1,_zhimmer_taken]}" )
-  else
-    rows=( "${(@)matches}" )
   fi
 
   # A word source replaces only the current word, so the line a row would leave
@@ -173,16 +155,14 @@ _zhimmer_addwords() {
   # ghost, which is what happens to zoxide, matching anywhere in a path -- `z
   # hmr` offers a line that does not begin with `z hmr`.
   local head=${LBUFFER[1,${#LBUFFER}-${#PREFIX}]}
-  _zhimmer_offer_ghost $name "$head${matches[1]}"
-
-  local -a bufs=(); local m
-  for m in "$matches[@]"; do bufs+=( "$head$m$RBUFFER" ); done
+  local -a bufs=( "$head${^matches[@]}$RBUFFER" )
   _zhimmer_emit $group $name rows bufs
 }
 
 # Hand one finished group to the menu. Both helpers above end here, which is
-# the point of it: the label a header is drawn under and the group a row's
-# colour is keyed by are decided once instead of twice.
+# the point of it: the group's share of the row budget, its ghost offer, the
+# label a header is drawn under and the group a row's colour is keyed by are
+# decided once instead of twice.
 #
 # The group and the label are two different strings and it matters which is
 # used where. ZHIMMER_COLORS is keyed by label (`branch`), ZHIMMER_ROW_COLORS
@@ -198,12 +178,21 @@ _zhimmer_addwords() {
 #   _zhimmer_emit <group> <label> <display array> <buffer array>
 _zhimmer_emit() {
   local -a _zedisp=( "${(@P)3}" ) _zebuf=( "${(@P)4}" )
-  local -i _zei
+  # Claim rows from the shared budget: one for the group header plus as many as
+  # are left for its matches.
+  (( $#_zebuf && _zhimmer_budget >= 2 )) || return
+  (( _zhimmer_budget-- ))                       # header
+  local -i _zen=$(( $#_zebuf < _zhimmer_budget ? $#_zebuf : _zhimmer_budget )) _zei
+  (( _zhimmer_budget -= _zen ))
+
+  # The first buffer, whole: a word source's carries RBUFFER too, but the ghost
+  # is only drawn with nothing past the cursor, so that never reaches it.
+  _zhimmer_offer_ghost $2 "$_zebuf[1]"
   # Rows go in unpadded: the menu pads at draw time, so a resize is picked up
   # without regenerating anything.
-  _zhimmer_zle_header $2
-  for (( _zei = 1; _zei <= $#_zedisp; _zei++ )); do
-    _zhimmer_zle_match "$_zedisp[_zei]" $1 "$_zebuf[_zei]"
+  _zhimmer_zle_add $2
+  for (( _zei = 1; _zei <= _zen; _zei++ )); do
+    _zhimmer_zle_add "$_zedisp[_zei]" $1 "$_zebuf[_zei]"
   done
 }
 
@@ -226,17 +215,4 @@ _zhimmer_pick() {  # <limit> <candidate>...  -> reply
   typeset -ga reply=( ${(o)argv} )
   (( $#reply > limit )) && reply=( "${(@)reply[1,limit]}" )
   (( $#reply ))
-}
-
-# Claim rows from the shared budget: one for the group header plus as many as
-# are left for its matches. Answers in _zhimmer_taken rather than on stdout --
-# a $( ) here would run in a subshell and silently discard the decrement.
-_zhimmer_take() {
-  local -i want=$1
-  typeset -g _zhimmer_taken=0
-  (( _zhimmer_budget >= 2 )) || return 0
-  (( _zhimmer_budget-- ))                       # header
-  _zhimmer_taken=$(( want < _zhimmer_budget ? want : _zhimmer_budget ))
-  (( _zhimmer_budget -= _zhimmer_taken ))
-  return 0
 }
