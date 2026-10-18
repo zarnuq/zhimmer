@@ -23,9 +23,16 @@ _zhimmer_source_file() {
   # in one -- appending it blindly spells `**`, which is zsh's recursive-descent
   # operator and matches nothing without a `/` after it, so `./z*` came back
   # empty.
-  local pat=${home}${PREFIX:${#tilde}}
-  [[ $pat == *\* ]] || pat=$pat\*
+  #
+  # A word that is not a valid pattern -- an unclosed `[`, as in
+  # `http://[TARGET-IP/cms` -- printed `bad pattern` above the prompt on every
+  # keystroke. NO_BAD_PATTERN leaves such a word unexpanded instead of failing,
+  # and that is the signal to glob the word again as a literal.
+  setopt localoptions nobadpattern
+  local word=${home}${PREFIX:${#tilde}} pat
+  [[ $word == *\* ]] && pat=$word || pat=$word\*
   local -a m=( ${~pat}(N) )
+  [[ $m == "$pat(N)" ]] && m=( ${~${(b)word}}*(N) )
   (( $#m )) || return
   m=( "${(@)m[1,limit]}" )
 

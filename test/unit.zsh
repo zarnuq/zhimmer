@@ -41,6 +41,7 @@ source $root/lib/zlemenu.zsh
 source $root/sources/history.zsh
 source $root/sources/alias.zsh
 source $root/sources/command.zsh
+source $root/sources/file.zsh
 
 is() {  # is <label> <got> <want>
   (( checks++ ))
@@ -550,6 +551,14 @@ fails_ "no match draws nothing" _zhimmer_addpicked g lbl 10 _cands
 # backslashes literally: `f[` found `f\[y` and missed `f[x`.
 _cands=( 'f[x' 'f\[y' ); _drew=(); PREFIX='f['; _zhimmer_addpicked g lbl 10 _cands
 is "a [ typed is a character to match" "${(j:|:)_drew}" 'g|lbl|f[x'
+# An unclosed `[` is not a valid glob: the file source printed `bad pattern`
+# on every keystroke instead of matching the word literally.
+_fdir=$(mktemp -d); : > $_fdir/'f[x'; : > $_fdir/fy
+_drew=(); CURRENT=2 PREFIX=$_fdir/'f['; _zhimmer_source_file 10
+is "an unclosed [ in a path matches literally" "${(j:|:)_drew}" "zhimmer-file|file|$_fdir/f[x"
+_drew=(); CURRENT=2 PREFIX=$_fdir/'f*'; _zhimmer_source_file 10
+is "a glob in a path still globs" "${(j:|:)_drew}" "zhimmer-file|file|$_fdir/f[x|$_fdir/fy"
+rm -rf $_fdir
 _zhimmer_addwords() { typeset -g _zhimmer_drawn=$2 }
 
 _zhimmer_mtime $root/test/unit.zsh
