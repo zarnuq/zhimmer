@@ -12,8 +12,8 @@ typeset -ga ZHIMMER_CONFLICTS=(
 
 zhimmer-doctor() {
   local q=${1:-git }
-  local -a srcs
-  zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
+  local -a srcs reply
+  _zhimmer_sources; srcs=( $reply )
 
   print -P '%B== zhimmer ==%b'
   print "  dir              $ZHIMMER_DIR"
@@ -34,7 +34,6 @@ zhimmer-doctor() {
 
   if (( ${#history} )); then
     print -P "\n%B== candidates for ${(qqq)q} ==%b"
-    local -a reply
     _zhimmer_cfg max-suggestions
     local -i lim=$REPLY
     _zhimmer_hist_q=

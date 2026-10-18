@@ -36,11 +36,8 @@ _zhimmer_make_load() {
   _zhimmer_make_at="$found:$REPLY:$PWD"
 
   local -a reply
-  if [[ -n $found ]] && _zhimmer_make_targets "$(<$found)"; then
-    _zhimmer_make_targets_c=( $reply )
-  else
-    _zhimmer_make_targets_c=()
-  fi
+  [[ -n $found ]] && _zhimmer_make_targets "$(<$found)"
+  _zhimmer_make_targets_c=( $reply )
 }
 
 _zhimmer_source_make() {

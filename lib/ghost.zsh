@@ -52,3 +52,13 @@ _zhimmer_line_reset() {
   _zhimmer_zle_clear
   return 0
 }
+
+# Ctrl+C aborts the line without line-finish, and zsh moves past whatever is
+# drawn -- so the menu stayed on screen above the next prompt. Clear and redraw
+# before the abort. Chains a TRAPINT that was already there; with none, the
+# return status is the default behaviour.
+_zhimmer_trapint() {
+  zle && zle _zhimmer_line_reset && zle -R
+  (( $+functions[_zhimmer_orig_trapint] )) && { _zhimmer_orig_trapint "$@"; return }
+  return $(( 128 + $1 ))
+}

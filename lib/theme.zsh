@@ -60,6 +60,7 @@ typeset -ga ZHIMMER_ROW_PRECOMMANDS=(
 typeset -g ZHIMMER_ROW_PRECOMMAND_COLOR='fg=#a6e3a1,underline'   # region_highlight spec
 
 typeset -g ZHIMMER_RULE_COLOR='#313244'
+typeset -g ZHIMMER_HEADER_COLOR='#6c7086'   # a label with no ZHIMMER_COLORS entry
 
 # [<sgr>;]#rrggbb -> SGR for ZLS_COLORS, by arithmetic (no fork). A bare SGR
 # passes through.
@@ -84,7 +85,7 @@ typeset -g ZHIMMER_SELECT_PROMPT='%S%M matches -- at %p%s'
 # not prompt-expanded, so the menu uses the plain _zhimmer_zle_htext instead.
 _zhimmer_header() {  # <label> -> REPLY
   _zhimmer_zle_htext $1
-  REPLY="%F{${ZHIMMER_COLORS[$1]:-#6c7086}}%B ${1}%b%f %F{$ZHIMMER_RULE_COLOR}${REPLY:$(( ${#1} + 2 ))}%f"
+  REPLY="%F{${ZHIMMER_COLORS[$1]:-$ZHIMMER_HEADER_COLOR}}%B ${1}%b%f %F{$ZHIMMER_RULE_COLOR}${REPLY:$(( ${#1} + 2 ))}%f"
 }
 
 # Indented, padded to full width so the selection is a solid bar, truncated so

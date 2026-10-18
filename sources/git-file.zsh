@@ -21,11 +21,8 @@ _zhimmer_gitfile_load() {
   [[ $_zhimmer_gitfile_at == $HISTCMD:$PWD ]] && return
   local -a reply
   # Relative to $PWD, as the command line typed here needs.
-  if _zhimmer_git_status_paths "$(git status --porcelain 2>/dev/null)"; then
-    _zhimmer_gitfile_paths=( $reply )
-  else
-    _zhimmer_gitfile_paths=()
-  fi
+  _zhimmer_git_status_paths "$(git status --porcelain 2>/dev/null)"
+  _zhimmer_gitfile_paths=( $reply )
   _zhimmer_gitfile_at=$HISTCMD:$PWD
 }
 

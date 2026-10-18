@@ -536,6 +536,19 @@ send "ls"
 checks   "a line after it is out of the search" ' history '
 stop
 
+# Ctrl+C skips line-finish, and zsh moves past whatever is drawn -- so the menu
+# was left on screen above the next prompt.
+start
+send "clear" Enter
+send Up
+send C-c
+refutes "Ctrl+C takes the menu off the screen" ' search '
+send 'sleep 5; echo z${:-after}' Enter  # the output, not the line, spells zafter
+send C-c
+sleep 5
+refutes "and still interrupts a running command" 'zafter'
+stop
+
 # Tab's matches are drawn by zhimmer, not by complist's columns: same header
 # and rule as the history and file groups, one row per line. The matches still
 # come from the completion system -- only the display is rewritten.

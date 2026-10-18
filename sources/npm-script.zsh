@@ -30,11 +30,8 @@ _zhimmer_npm_load() {
   _zhimmer_npm_at="$REPLY:$PWD"
 
   local -a reply
-  if [[ -r package.json ]] && _zhimmer_npm_scripts "$(<package.json)"; then
-    _zhimmer_npm_scripts_c=( $reply )
-  else
-    _zhimmer_npm_scripts_c=()
-  fi
+  [[ -r package.json ]] && _zhimmer_npm_scripts "$(<package.json)"
+  _zhimmer_npm_scripts_c=( $reply )
 }
 
 _zhimmer_source_npm-script() {

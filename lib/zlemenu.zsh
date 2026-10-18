@@ -99,7 +99,7 @@ _zhimmer_zle_draw() {
       region_highlight+=( "$s $e bg=${ZHIMMER_SELECT_BG},memo=zhimmer" )
     elif (( nlen )); then
       region_highlight+=(
-        "$s $(( s + nlen )) fg=${ZHIMMER_COLORS[$name]:-#6c7086},bold,memo=zhimmer"
+        "$s $(( s + nlen )) fg=${ZHIMMER_COLORS[$name]:-$ZHIMMER_HEADER_COLOR},bold,memo=zhimmer"
         "$(( s + nlen )) $e fg=${ZHIMMER_RULE_COLOR},memo=zhimmer"
       )
     elif (( accents )); then

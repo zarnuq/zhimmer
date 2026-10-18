@@ -19,6 +19,12 @@ typeset -gA ZHIMMER_DEFAULTS=(
   prompt            no
   prompt-async      yes
 )
+# The array setting's default, beside the scalars.
+typeset -ga ZHIMMER_DEFAULT_SOURCES=( history alias command )
+
+_zhimmer_sources() {  # -> reply
+  zstyle -a ':zhimmer:*' sources reply || reply=( $ZHIMMER_DEFAULT_SOURCES )
+}
 
 # In REPLY, never on stdout: $( ) forks, and this runs on every keystroke.
 _zhimmer_cfg() {
@@ -44,14 +50,14 @@ typeset -gi _zhimmer_search=0
 .zhimmer-complete() {
   _zhimmer_zle_reset
   local REPLY
-  local -a srcs
+  local -a srcs reply
   local -i limit
   if (( _zhimmer_search )); then
     srcs=( history )
     _zhimmer_cfg search-suggestions; limit=$REPLY
     typeset -g _zhimmer_budget=$(( limit + 1 ))    # the rows, plus their header
   else
-    zstyle -a ':zhimmer:*' sources srcs || srcs=( history alias command )
+    _zhimmer_sources; srcs=( $reply )
     _zhimmer_cfg max-suggestions; limit=$REPLY
     typeset -g _zhimmer_budget=$(( limit * 5 ))
   fi

@@ -16,16 +16,13 @@ typeset -g _zhimmer_f
 for _zhimmer_f in $ZHIMMER_DIR/lib/*.zsh(N) $ZHIMMER_DIR/sources/*.zsh(N); do
   source $_zhimmer_f
 done
-unset _zhimmer_f
 
 zle -C zhimmer-show list-choices .zhimmer-complete
 
-zle -N zhimmer-toggle      .zhimmer-toggle
-zle -N zhimmer-search      .zhimmer-search
-zle -N zhimmer-step-back   .zhimmer-step-back
-zle -N zhimmer-down        .zhimmer-down
-zle -N zhimmer-up          .zhimmer-up
-zle -N zhimmer-magic-space .zhimmer-magic-space
+for _zhimmer_f in toggle search step-back down up magic-space; do
+  zle -N zhimmer-$_zhimmer_f .zhimmer-$_zhimmer_f
+done
+unset _zhimmer_f
 # self-insert, accept-line and Tab are chained from _zhimmer_bindkeys instead.
 _zhimmer_wrap_builtin _zhimmer_refresh_with     $ZHIMMER_REFRESH_WIDGETS
 _zhimmer_wrap_builtin _zhimmer_accept_with      $ZHIMMER_ACCEPT_WIDGETS
@@ -41,6 +38,8 @@ add-zle-hook-widget line-pre-redraw _zhimmer_ghost_guard
 zle -N _zhimmer_line_reset
 add-zle-hook-widget line-finish _zhimmer_line_reset
 add-zle-hook-widget line-init   _zhimmer_line_reset
+(( $+functions[TRAPINT] )) && functions[_zhimmer_orig_trapint]=$functions[TRAPINT]
+TRAPINT() { _zhimmer_trapint "$@"; return }  # an explicit return: a bare status does not abort the line
 
 # Idempotent: every wrapper it calls has its own guard.
 _zhimmer_bindkeys() {
