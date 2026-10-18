@@ -523,6 +523,19 @@ send Down
 checksel "and one more wraps back to the first row" './zmany/f1'
 stop
 
+# Up with nothing drawn opens the history, newest first, on the last row --
+# rather than recalling one line with no menu under it.
+start
+send Up
+checks   "Up on an empty line opens the history" ' search '
+checksel "on its last row" 'ls -la'
+send Up
+checksel "and Up again walks up it" 'sudo openvpn ~/VPNs/us12329.nordvpn.com.udp.ovpn'
+send C-c
+send "ls"
+checks   "a line after it is out of the search" ' history '
+stop
+
 # Tab's matches are drawn by zhimmer, not by complist's columns: same header
 # and rule as the history and file groups, one row per line. The matches still
 # come from the completion system -- only the display is rewritten.

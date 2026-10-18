@@ -118,6 +118,7 @@ zplug "/path/to/zhimmer", from:local, use:"zhimmer.plugin.zsh", defer:2
 | key | action |
 |---|---|
 | `↓` | open the menu — falls through to history when there is nothing to show |
+| `↑` | on an empty line, open the history newest first, on its last row |
 | `↑` `↓` | move within the menu |
 | `Tab` `Shift+Tab` | inside the menu, move down and up it; outside, zsh's normal completion |
 | *typing* | inside the menu, narrow it to what still matches |

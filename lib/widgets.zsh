@@ -97,7 +97,16 @@ _zhimmer_maybe_show() {
 }
 
 .zhimmer-up() {
-  (( _zhimmer_enabled )) && _zhimmer_zle_move -1 && return
+  (( _zhimmer_enabled )) || { zle .up-line-or-history; return }
+  _zhimmer_zle_move -1 && return
+  # Nothing drawn (empty line, under min-chars): open the history as a search,
+  # which answers an empty query with every line newest first, then wrap to the
+  # last row as Up does on an open menu.
+  _zhimmer_search=1
+  _zhimmer_maybe_show
+  _zhimmer_zle_move -1 && return
+  _zhimmer_search=0
+  _zhimmer_zle_clear
   zle .up-line-or-history
 }
 
