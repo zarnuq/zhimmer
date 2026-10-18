@@ -1,23 +1,10 @@
-# In-buffer alias expansion. Rather than offering an alias's expansion as a menu
-# row, this rewrites the alias in the buffer so the real command fills the line:
-# typing `gs ` leaves `git status -s ` in front of you, editable before it runs.
-# It fires on Space and Enter -- the two points where a word is finished.
-#
-# Command aliases expand only in command position, matching zsh's own rule;
-# global aliases expand anywhere. Chains resolve one alias at a time (gcm -> gc
-# -> git commit), and seeding `seen` with the word reproduces zsh's rule that an
-# alias is never re-expanded inside its own expansion, so `ls='ls --color'`
-# expands exactly once.
+# In-buffer alias expansion on Space and Enter: `gs ` becomes `git status -s `.
+# Command aliases only in command position, global aliases anywhere. Chains
+# resolve one step at a time; an alias never re-expands inside its own
+# expansion, so `ls='ls --color'` expands once.
 
-# Where a command alias is allowed to expand. Not just the start of the line:
-# `make; gs` and `ls | gs` are command positions too, and testing for "nothing
-# but whitespace before it" left the alias sitting there unexpanded in every
-# pipeline and after every `;`.
-#
-# The test is on the last non-whitespace character before the word, so a `|`
-# earlier in the line does not make everything after it look like a command:
-# `echo a| b gs` is an argument to `b`, and asking only whether the text
-# contains a delimiter would have expanded it.
+# Command position: the last non-space character before the word is a
+# delimiter, or there is none. (`echo a| b gs` is an argument to `b`.)
 _zhimmer_command_pos() {  # <the text before the word>
   local b=$1
   b=${b[1,${#b}-${#${b##*[^[:space:]]}}]}   # without its trailing whitespace
@@ -30,10 +17,7 @@ _zhimmer_expand_alias() {
 
   local word=${LBUFFER##*[[:space:]]}
   [[ -n $word ]] || return 1
-  # By length rather than by pattern. ${LBUFFER%$word} matches the word as a
-  # glob, so a word ending in `*` or holding a `[1]` strips the wrong amount --
-  # or, when the pattern happens not to match at all, nothing, leaving the alias
-  # duplicated in the line.
+  # By length, not ${LBUFFER%$word}: the word may hold glob characters.
   local before=${LBUFFER[1,${#LBUFFER}-${#word}]} exp=
   if [[ -n $galiases[$word] ]]; then
     exp=$galiases[$word]
@@ -51,8 +35,6 @@ _zhimmer_expand_alias() {
   return 0
 }
 
-# Space: expand the word just finished, then insert the space and refresh the
-# menu as a normal keystroke would.
 .zhimmer-magic-space() {
   _zhimmer_zle_clear
   _zhimmer_expand_alias
@@ -60,10 +42,8 @@ _zhimmer_expand_alias() {
   _zhimmer_maybe_show
 }
 
-# Enter: expand a bare alias so the command that runs -- and lands in history --
-# is the real one. Chains onto whatever accept-line already is (zsh-vi-mode,
-# zsh-syntax-highlighting) instead of clobbering it.
-# Wrapped with _zhimmer_wrap_chain.
+# Enter: take the selected row, else expand a bare alias so the real command
+# runs and lands in history. Chained onto whatever accept-line already is.
 _zhimmer_accept_line_with() {  # <widget>
   _zhimmer_zle_accept && return
   _zhimmer_expand_alias

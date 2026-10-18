@@ -751,14 +751,6 @@ _zhimmer_sgr '#000000'; is "and the dark end of it"          "$REPLY" "38;2;0;0;
 _zhimmer_sgr '#ffffff'; is "and the light end"               "$REPLY" "38;2;255;255;255"
 _zhimmer_sgr '48;2;69;71;90;1'; is "an SGR is passed through untouched" "48;2;69;71;90;1" "$REPLY"
 
-_zhimmer_hl '#fab387'; is "hex converts to a highlight spec" "$REPLY" "fg=#fab387"
-# `sudo openvpn ...` puts the command in second place, and the precommand is
-# underlined to match how zsh-syntax-highlighting marks one on the line above.
-# The SGR prefix the ZLS_COLORS spelling carries has to survive the conversion.
-_zhimmer_hl '4;#a6e3a1'; is "and an SGR prefix becomes a word" "$REPLY" "fg=#a6e3a1,underline"
-_zhimmer_hl '1;4;#a6e3a1'; is "more than one of them"         "$REPLY" "fg=#a6e3a1,bold,underline"
-fails_ "a value with no hex in it is declined" _zhimmer_hl '48;2;1;2;3'
-
 # The selection bar is one colour said twice -- hex for region_highlight, SGR
 # for complist -- so the SGR is derived rather than written out again.
 _zhimmer_sgr $ZHIMMER_SELECT_BG

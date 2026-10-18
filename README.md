@@ -411,7 +411,7 @@ underlined, which is how zsh-syntax-highlighting marks it on the line above.
 
 ```zsh
 ZHIMMER_ROW_PRECOMMANDS=( sudo doas su env command nohup … )
-ZHIMMER_ROW_PRECOMMAND_COLOR='4;#a6e3a1'   # the `4;` is the underline
+ZHIMMER_ROW_PRECOMMAND_COLOR='fg=#a6e3a1,underline'   # a region_highlight spec
 ```
 
 The accent is keyed by the source's **group** (`git-branch`), not by the label

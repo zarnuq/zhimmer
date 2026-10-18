@@ -1,20 +1,10 @@
-# Targets from the Makefile in the current directory.
-#
-# Read as text rather than asked of make: `make -pn` runs the makefile's own
-# shell assignments to build its database, which is a fork and a side effect
-# for something being asked on every keystroke. A first-column `name:` is what
-# a target looks like, and that is nearly all of what anyone types.
-#
-# Re-read when the file's mtime moves, which is the same free check the ssh
-# source uses; without zsh/stat the stamp stays empty and the file is read once
-# per directory.
+# Makefile targets, read as text (`make -pn` forks and runs the makefile's own
+# shell assignments). Re-read when the mtime moves.
 typeset -g _zhimmer_make_at=
 typeset -ga _zhimmer_make_targets_c=()
 
-# A target line starts in the first column and has a `:` before any `=`. The
-# order of that test is what separates `target: dep` from `VAR := value`, and
-# `.PHONY`, `%.o` and anything holding a `$` are rules and patterns rather than
-# names to type.
+# First column, `:` before any `=` (so not `VAR := x`). `.PHONY`, `%.o` and
+# anything with `$` are rules or patterns, not names to type.
 _zhimmer_make_targets() {  # <makefile text>  -> reply
   typeset -ga reply=()
   local l head t
@@ -23,8 +13,6 @@ _zhimmer_make_targets() {  # <makefile text>  -> reply
     [[ -z $l || $l == [[:space:]]* || $l == \#* ]] && continue
     [[ $l == *:* ]] || continue
     head=${l%%:*}
-    # `VAR := x`, `VAR ::= x` and `VAR ?= x` all put the = before the colon or
-    # immediately after it; a real target has neither.
     [[ $head == *=* || $l == *:=* ]] && continue
     for t in ${(z)head}; do
       [[ $t == *[%\$\(\)]* ]] && continue
@@ -44,7 +32,6 @@ _zhimmer_make_load() {
   done
   local REPLY
   _zhimmer_mtime $found
-  # $PWD last: the parts before it hold no `:`, so the key cannot collide.
   [[ $_zhimmer_make_at == "$found:$REPLY:$PWD" ]] && return
   _zhimmer_make_at="$found:$REPLY:$PWD"
 

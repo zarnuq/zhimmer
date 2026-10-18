@@ -1,19 +1,10 @@
-# The files git already knows have changed, for the subcommands that act on
-# them. `git add <Tab>` completes every path in the directory; what is wanted
-# there is almost always one of the handful that is actually modified.
-#
-# Cached per command line and per directory like the branch source, and for the
-# same reason -- this is a fork, and a source is asked on every keystroke. The
-# working tree does change under a command, which is exactly what HISTCMD moves
-# on.
+# Changed files, for git subcommands that act on them. One `git status` fork
+# per command line and directory.
 typeset -g _zhimmer_gitfile_at=
 typeset -ga _zhimmer_gitfile_paths=()
 
-# Porcelain v1 in, paths out. Two columns of status, a space, then the path;
-# a rename is written `R  old -> new`, and it is the new name that exists on
-# disk to be acted on. A path with a space or a quote in it comes back quoted
-# by git, and (Q) takes that back off rather than leaving a row with literal
-# quotes in it that no command would match.
+# Porcelain v1 in, paths out. A rename yields its new name; (Q) unquotes the
+# paths git quotes.
 _zhimmer_git_status_paths() {  # <git status --porcelain text>  -> reply
   typeset -ga reply=()
   local l p
@@ -29,9 +20,7 @@ _zhimmer_git_status_paths() {  # <git status --porcelain text>  -> reply
 _zhimmer_gitfile_load() {
   [[ $_zhimmer_gitfile_at == $HISTCMD:$PWD ]] && return
   local -a reply
-  # Relative to the current directory, not the repository root: the path is
-  # going into a command line typed here, and `../` prefixes on everything are
-  # what a root-relative list would give.
+  # Relative to $PWD, as the command line typed here needs.
   if _zhimmer_git_status_paths "$(git status --porcelain 2>/dev/null)"; then
     _zhimmer_gitfile_paths=( $reply )
   else
