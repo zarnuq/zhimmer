@@ -16,6 +16,14 @@ typeset -gi _zhimmer_ztop=1     # first row shown
 # the accept keys once took all of POSTDISPLAY, menu and all, into BUFFER.
 typeset -g _zhimmer_zghost=
 
+# Up on an empty line opens the history above the prompt, newest next to it:
+# the rows go in front of PROMPT, coloured with %F/%K instead of
+# region_highlight (which cannot reach the prompt). _zhimmer_zprefix is exactly
+# what was put in front, so it comes back out even after something else has
+# rebuilt the rest of PROMPT.
+typeset -gi _zhimmer_above=0
+typeset -g _zhimmer_zprefix= _zhimmer_zmenu=
+
 _zhimmer_zle_reset() {
   _zhimmer_zrow=() _zhimmer_zkind=() _zhimmer_zbuf=()
   _zhimmer_zsel=0 _zhimmer_ztop=1
@@ -61,9 +69,10 @@ _zhimmer_zle_htext() {  # <label> -> REPLY
   REPLY=" ${name} ${(l:w::─:):-}"
 }
 
-# Ghost on the first line, rows under it. Rebuilt from scratch each time, so a
-# resize is picked up on the next keystroke. The memo lets the guard drop only
-# zhimmer's highlights, not zsh-syntax-highlighting's.
+# Ghost on the first line, rows under it -- or, opened above, rows in the
+# prompt in reverse so the first is nearest the line. Rebuilt from scratch each
+# time, so a resize is picked up on the next keystroke. The memo lets the guard
+# drop only zhimmer's highlights, not zsh-syntax-highlighting's.
 _zhimmer_zle_draw() {
   region_highlight=( ${region_highlight:#*memo=zhimmer*} )
   local -i base=${#BUFFER}
@@ -79,26 +88,35 @@ _zhimmer_zle_draw() {
   local -i accents=0
   _zhimmer_bool row-colors && accents=1
 
-  local -a reply
-  _zhimmer_zle_window $#_zhimmer_zrow $_zhimmer_zsel $(( LINES - 4 )) $_zhimmer_ztop
+  local -i h=$(( LINES - 4 ))
+  if (( _zhimmer_above )); then
+    _zhimmer_zle_baseprompt
+    local nl=${REPLY//[^$'\n']/}
+    h=$(( h - ${#nl} - 1 ))
+    pos=-1                                       # rows are a string of their own
+  fi
+  local -a reply hl order
+  _zhimmer_zle_window $#_zhimmer_zrow $_zhimmer_zsel $h $_zhimmer_ztop
   _zhimmer_ztop=$reply[1]
-  local -i i first=$reply[1] last=$reply[2] s e nlen
-  local name
-  for (( i = first; i <= last; i++ )); do
+  order=( {$reply[1]..$reply[2]} )
+  (( _zhimmer_above )) && order=( ${(Oa)order} )
+  local -i i s e nlen
+  local name rows=
+  for i in $order; do
     name=$_zhimmer_zrow[i]
     if [[ -z $_zhimmer_zkind[i] ]]; then
       _zhimmer_zle_htext "$name"; nlen=$(( ${#name} + 2 ))
     else
       _zhimmer_row "$name"; nlen=0
     fi
-    out+=$'\n'$REPLY
+    rows+=$'\n'$REPLY
     (( pos++ ))                                  # the newline itself
     s=$pos; e=$(( pos + ${#REPLY} )); pos=$e
     if (( i == _zhimmer_zsel )); then
       # The bar wins over the accent: two colours read as half-selected.
-      region_highlight+=( "$s $e bg=${ZHIMMER_SELECT_BG},memo=zhimmer" )
+      hl+=( "$s $e bg=${ZHIMMER_SELECT_BG},memo=zhimmer" )
     elif (( nlen )); then
-      region_highlight+=(
+      hl+=(
         "$s $(( s + nlen )) fg=${ZHIMMER_COLORS[$name]:-$ZHIMMER_HEADER_COLOR},bold,memo=zhimmer"
         "$(( s + nlen )) $e fg=${ZHIMMER_RULE_COLOR},memo=zhimmer"
       )
@@ -106,8 +124,68 @@ _zhimmer_zle_draw() {
       _zhimmer_zle_token $s $name $_zhimmer_zkind[i]
     fi
   done
+  # Leaving above always goes through _zhimmer_zle_clear, which takes the rows
+  # back out of PROMPT -- so only the above case touches it here.
+  if (( _zhimmer_above )); then
+    _zhimmer_zle_promptify "${rows#$'\n'}" $hl
+    _zhimmer_zle_setprompt "$REPLY"$'\n'
+  else
+    out+=$rows
+    region_highlight+=( $hl )
+  fi
   POSTDISPLAY=$out
   return 0
+}
+
+# PROMPT without the rows zhimmer put in front of it.
+_zhimmer_zle_baseprompt() {  # -> REPLY
+  REPLY=$PROMPT
+  [[ -n $_zhimmer_zprefix && $REPLY == "$_zhimmer_zprefix"* ]] &&   # quoted: literal
+    REPLY=${REPLY:${#_zhimmer_zprefix}}
+  return 0
+}
+
+# Put rows in front of PROMPT, or with none take them back out. Under
+# PROMPT_SUBST they go in through a parameter: its value is not expanded again,
+# so a history line holding $( ) is text, not a command run on every redraw.
+_zhimmer_zle_setprompt() {  # [<prompt text>]
+  [[ -z $1 && -z $_zhimmer_zprefix ]] && return 0
+  local REPLY; _zhimmer_zle_baseprompt
+  _zhimmer_zmenu=$1 _zhimmer_zprefix=$1
+  [[ -n $1 && -o promptsubst ]] && _zhimmer_zprefix='${_zhimmer_zmenu}'
+  PROMPT=$_zhimmer_zprefix$REPLY
+  zle && zle reset-prompt
+  return 0
+}
+
+# Text plus region_highlight-style "start end spec" ranges, as prompt escapes.
+# % (and ! under PROMPT_BANG) in the text is escaped.
+_zhimmer_zle_promptify() {  # <text> <range>... -> REPLY
+  local text=$1 h spec a o c out=
+  local -a part
+  local -i at=0 s e
+  for h in ${(on)@:2} ''; do
+    if [[ -n $h ]]; then
+      s=${h%% *} h=${h#* } e=${h%% *} spec=${h#* }
+    else
+      s=${#text} e=${#text} spec=
+    fi
+    o= c=
+    for a in ${(s:,:)spec}; do
+      case $a in
+        fg=*)      o+="%F{${a#fg=}}" c+='%f' ;;
+        bg=*)      o+="%K{${a#bg=}}" c+='%k' ;;
+        bold)      o+='%B' c+='%b' ;;
+        underline) o+='%U' c+='%u' ;;
+      esac
+    done
+    part=( "${text[at+1,s]}" "${text[s+1,e]}" )
+    part=( "${(@)part//\%/%%}" )
+    [[ -o promptbang ]] && part=( "${(@)part//!/!!}" )
+    out+=$part[1]$o$part[2]$c
+    at=$e
+  done
+  REPLY=$out
 }
 
 # Colour a row's command word -- or, after a precommand, the precommand and the
@@ -120,7 +198,7 @@ _zhimmer_zle_token() {  # <row start> <row text> <group>
   (( $#first )) || return 0
   local -i a=$(( s + 2 ))                       # past the two-space indent
   if (( ${ZHIMMER_ROW_PRECOMMANDS[(I)$first]} )); then
-    region_highlight+=( "$a $(( a + $#first )) ${ZHIMMER_ROW_PRECOMMAND_COLOR},memo=zhimmer" )
+    hl+=( "$a $(( a + $#first )) ${ZHIMMER_ROW_PRECOMMAND_COLOR},memo=zhimmer" )
     local rest=${text#$first}
     local lead=${rest%%[^[:space:]]*}            # no `##`: EXTENDED_GLOB is never set
     local second=${${rest#$lead}%% *}
@@ -128,7 +206,7 @@ _zhimmer_zle_token() {  # <row start> <row text> <group>
     a=$(( a + $#first + $#lead ))
     first=$second
   fi
-  region_highlight+=( "$a $(( a + $#first )) fg=${colour},memo=zhimmer" )
+  hl+=( "$a $(( a + $#first )) fg=${colour},memo=zhimmer" )
   return 0
 }
 
@@ -156,14 +234,18 @@ _zhimmer_zle_clear() {
   _zhimmer_zghost=
   POSTDISPLAY=
   region_highlight=( ${region_highlight:#*memo=zhimmer*} )
+  _zhimmer_zle_setprompt
   typeset -g _zhimmer_shown_for=
   return 0
 }
 
 # Wraps both ways: from nothing, Down lands on the first row and Up the last.
+# Opened above, the rows run bottom to top, so the step turns round with them.
 _zhimmer_zle_move() {  # <step>
   local REPLY
-  _zhimmer_zle_next $_zhimmer_zsel $1 || return 1
+  local -i step=$1
+  (( _zhimmer_above )) && step=-step
+  _zhimmer_zle_next $_zhimmer_zsel $step || return 1
   _zhimmer_zsel=$REPLY
   _zhimmer_zle_show
   return 0
@@ -174,7 +256,7 @@ _zhimmer_zle_accept() {
   local buf=$_zhimmer_zbuf[_zhimmer_zsel]
   # Taking a row ends a search. Not in _zhimmer_zle_clear, which runs on every
   # keystroke and would end it on the first one.
-  _zhimmer_search=0
+  _zhimmer_search=0 _zhimmer_above=0
   _zhimmer_zle_clear
   BUFFER=$buf
   CURSOR=${#BUFFER}

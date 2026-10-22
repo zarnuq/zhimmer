@@ -185,6 +185,9 @@ _zhimmer_prompt_ready() {  # <fd>
 
   _zhimmer_prompt_git=$sym
   _zhimmer_prompt_build
+  # A history menu open above the prompt lives in front of PROMPT, put there
+  # by _zhimmer_zle_setprompt (zlemenu.zsh); the rebuild just dropped it.
+  PROMPT=$_zhimmer_zprefix$PROMPT
   zle reset-prompt 2>/dev/null
   return 0
 }

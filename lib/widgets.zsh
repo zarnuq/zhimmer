@@ -67,13 +67,13 @@ _zhimmer_maybe_show() {
 .zhimmer-up() {
   (( _zhimmer_enabled )) || { zle .up-line-or-history; return }
   _zhimmer_zle_move -1 && return
-  # Nothing drawn (empty line, under min-chars): open the history as a search,
-  # which answers an empty query with every line newest first, then wrap to the
-  # last row as Up does on an open menu.
-  _zhimmer_search=1
+  # Nothing drawn (empty line, under min-chars): open the history as a search
+  # above the prompt. It answers newest first, so the newest row lands next to
+  # the line, already selected, and Up walks back in time.
+  _zhimmer_search=1 _zhimmer_above=1
   _zhimmer_maybe_show
-  _zhimmer_zle_move -1 && return
-  _zhimmer_search=0
+  (( _zhimmer_zsel )) && return
+  _zhimmer_search=0 _zhimmer_above=0
   _zhimmer_zle_clear
   zle .up-line-or-history
 }
@@ -105,7 +105,8 @@ _zhimmer_note_menu() {
     return
   fi
   if (( _zhimmer_search )); then
-    _zhimmer_zle_move 1
+    # Next match is always older: undo the flip a menu opened above applies.
+    _zhimmer_zle_move $(( _zhimmer_above ? -1 : 1 ))
     return
   fi
   _zhimmer_search=1

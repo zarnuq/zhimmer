@@ -523,30 +523,29 @@ send Down
 checksel "and one more wraps back to the first row" './zmany/f1'
 stop
 
-# Up with nothing drawn opens the history, newest first, on the last row --
-# rather than recalling one line with no menu under it.
+# Up with nothing drawn opens the history above the prompt, newest next to the
+# line and already selected -- rather than recalling one line with no menu.
+lastline() { screen | tail -1 }
 start
 send Up
 checks   "Up on an empty line opens the history" ' search '
-checksel "on its last row" 'ls -la'
+_assert lastline want "above the prompt, which stays the last line" "% grep -rn 'zhimmer"
+checksel "on the newest row" "grep -rn 'zhimmer"
 send Up
-checksel "and Up again walks up it" 'sudo openvpn ~/VPNs/us12329.nordvpn.com.udp.ovpn'
+checksel "and Up again walks back in time" 'echo [zhimmer] glob test'
+send Down
+checksel "and Down forward again" "grep -rn 'zhimmer"
 send C-c
+refutes  "Ctrl+C takes the rows back out of the prompt" ' search '
 send "ls"
 checks   "a line after it is out of the search" ' history '
 stop
 
-# Ctrl+C skips line-finish, and zsh moves past whatever is drawn -- so the menu
-# was left on screen above the next prompt.
+# Ctrl+R's "next match" is older, and in the menu above older is upward.
 start
-send "clear" Enter
 send Up
-send C-c
-refutes "Ctrl+C takes the menu off the screen" ' search '
-send 'sleep 5; echo z${:-after}' Enter  # the output, not the line, spells zafter
-send C-c
-sleep 5
-refutes "and still interrupts a running command" 'zafter'
+send C-r
+checksel "Ctrl+R in the menu above steps to an older match" 'echo [zhimmer] glob test'
 stop
 
 # Tab's matches are drawn by zhimmer, not by complist's columns: same header

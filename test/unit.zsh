@@ -793,26 +793,33 @@ is "every row colour belongs to a source" "$#ZHIMMER_ROW_COLORS" "$#_groups"
 
 # The row accent itself: the first token, painted by offset. `sudo openvpn` has
 # the word you were looking for in second place, so it gets two ranges -- the
-# precommand underlined, then the command it runs.
-region_highlight=()
+# precommand underlined, then the command it runs. Ranges go into the
+# caller's `hl`, which the draw hands to region_highlight or the prompt.
+local -a hl
+hl=()
 _zhimmer_zle_token 0 'sudo openvpn ~/vpn.ovpn' zhimmer-history
-is "a precommand row paints two ranges"  "$#region_highlight" "2"
-matches "the precommand is underlined"   "$region_highlight[1]" "2 6 fg=#a6e3a1,underline*"
-matches "and the command after it is not" "$region_highlight[2]" "7 14 fg=#a6e3a1,*"
+is "a precommand row paints two ranges"  "$#hl" "2"
+matches "the precommand is underlined"   "$hl[1]" "2 6 fg=#a6e3a1,underline*"
+matches "and the command after it is not" "$hl[2]" "7 14 fg=#a6e3a1,*"
 
-region_highlight=()
+hl=()
 _zhimmer_zle_token 0 'git status -s' zhimmer-history
-is "an ordinary row paints one"          "$#region_highlight" "1"
-matches "over its first token only"      "$region_highlight[1]" "2 5 fg=#a6e3a1,*"
+is "an ordinary row paints one"          "$#hl" "1"
+matches "over its first token only"      "$hl[1]" "2 5 fg=#a6e3a1,*"
 
 # Keyed by group, not by label. `branch` is the label git-branch draws its
 # header under and is not a key in ZHIMMER_ROW_COLORS at all.
-region_highlight=()
+hl=()
 _zhimmer_zle_token 0 'feat/menu' zhimmer-git-branch
-is "a branch row is coloured under its group" "$#region_highlight" "1"
-region_highlight=()
+is "a branch row is coloured under its group" "$#hl" "1"
+hl=()
 _zhimmer_zle_token 0 'feat/menu' branch
-is "and a group with no colour paints nothing" "$#region_highlight" "0"
+is "and a group with no colour paints nothing" "$#hl" "0"
+
+# Above the prompt the same ranges become prompt escapes. A % in a history
+# line is text, not a format specifier.
+_zhimmer_zle_promptify 'ab 50%' '3 6 fg=red,bold,memo=zhimmer' '0 1 bg=blue'
+is "ranges become prompt escapes" "$REPLY" '%K{blue}a%kb %F{red}%B50%%%f%b'
 
 print "== zle menu: the scrolling window =="
 # Which rows are on screen, given where the selection is. Pure, so the scroll

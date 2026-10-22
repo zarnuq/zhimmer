@@ -17,7 +17,8 @@ _zhimmer_offer_ghost() {  # <source-name> <whole-line candidate>
 # for. This catches every path that rewrites the line (Tab, unwrapped widgets);
 # it can only drop, since a completion widget cannot run from a redraw hook.
 _zhimmer_ghost_guard() {
-  [[ -n $POSTDISPLAY && $BUFFER != $_zhimmer_shown_for ]] && _zhimmer_zle_clear
+  [[ ( -n $POSTDISPLAY || -n $_zhimmer_zprefix ) && $BUFFER != $_zhimmer_shown_for ]] &&
+    _zhimmer_zle_clear
   return 0
 }
 
@@ -48,7 +49,7 @@ _zhimmer_accept_ghost() {  # [<widget to move by>]
 # On line-finish (a ghost must not outlive an accepted line) and line-init
 # (Ctrl+C skips line-finish, and a search must not leak into the next line).
 _zhimmer_line_reset() {
-  _zhimmer_search=0
+  _zhimmer_search=0 _zhimmer_above=0
   _zhimmer_zle_clear
   return 0
 }
