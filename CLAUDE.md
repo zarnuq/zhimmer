@@ -92,6 +92,15 @@ It also owns `_zhimmer_zghost` — the greyed tail — **tracked separately from
 `POSTDISPLAY`**, because `POSTDISPLAY` holds the ghost *and* every row. See the
 invariant below.
 
+Menu state lives in three surfaces, not two. `POSTDISPLAY` holds the rows of a
+menu drawn *under* the prompt; `_zhimmer_zghost` the greyed tail. The third is
+`PROMPT` itself: Up on an empty line opens the history *above* the prompt
+(`_zhimmer_above=1`), and those rows are put in front of `PROMPT` by
+`_zhimmer_zle_setprompt` — coloured with `%F`/`%K` escapes, since
+`region_highlight` cannot reach into the prompt. `_zhimmer_zprefix` is exactly
+what was prepended, so it survives and comes back out after something else
+rebuilds the rest of `PROMPT`. The two invariants below guard this surface.
+
 `lib/tabstyle.zsh` shadows `compadd` for the duration of one completion so Tab's
 matches get zhimmer's rows and headers, and sets the completion zstyles
 (`menu select`, `list-prompt`, `select-prompt`, `group-name`, `list-colors`)
@@ -129,6 +138,19 @@ ones that bite hardest:
   Ctrl+Right) used to read the whole of it, so Ctrl+E on an open menu put the
   header rule and all its rows into `BUFFER` — which looked on screen exactly
   like the menu still being open, one Enter away from running the lot.
+- **A menu opened above the prompt is a second off-`POSTDISPLAY` surface.** Its
+  rows live in front of `PROMPT` (via `_zhimmer_zle_setprompt`), not in
+  `POSTDISPLAY`, so anything that keys only on `POSTDISPLAY` misses it. The
+  ghost guard (`ghost.zsh`) tests `-n $_zhimmer_zprefix` as well, or Up-opened
+  history would not be dropped when `BUFFER` diverges from what it was drawn
+  against.
+- **A `PROMPT` rebuild drops the above-menu prefix — re-prepend it.** The
+  above-menu rows are prepended to `PROMPT`; any code that rebuilds `PROMPT`
+  from scratch wipes them. `lib/prompt.zsh`'s async handler re-prepends
+  `$_zhimmer_zprefix` after `_zhimmer_prompt_build` for exactly this reason. The
+  prefix is idempotent (rebuild drops it, the handler adds it back once), so it
+  never accumulates — but a rebuild that forgets the re-prepend makes an open
+  history menu vanish on the next `git status` result.
 - **Wrap widgets by name, never bind by key.** Which widget backspace reaches
   depends on the keymap: with `EDITOR=nvim` zsh selects viins, where it is
   `vi-backward-delete-char` and `^U` is `vi-kill-line`. Only wrap widgets whose
