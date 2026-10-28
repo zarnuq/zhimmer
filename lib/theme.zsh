@@ -72,10 +72,14 @@ _zhimmer_sgr() {  # -> REPLY
   REPLY="${pre}38;2;$(( 16#${h[1,2]} ));$(( 16#${h[3,4]} ));$(( 16#${h[5,6]} ))"
 }
 
-# The selection bar, written once in hex and derived for complist.
+# The selection bar, written once in hex and derived for complist. A theme file
+# that changes ZHIMMER_SELECT_BG calls this again.
 typeset -g ZHIMMER_SELECT_BG='#45475a'
-_zhimmer_sgr $ZHIMMER_SELECT_BG
-: ${ZHIMMER_SELECT:="48;${REPLY#38;};1"}
+_zhimmer_select_from_bg() {
+  _zhimmer_sgr $ZHIMMER_SELECT_BG
+  ZHIMMER_SELECT="48;${REPLY#38;};1"
+}
+[[ -n $ZHIMMER_SELECT ]] || _zhimmer_select_from_bg
 
 # Tab's listing only; zhimmer's menu scrolls by moving its window.
 typeset -g ZHIMMER_LIST_PROMPT='%S%M matches -- at %p, Tab for more%s'

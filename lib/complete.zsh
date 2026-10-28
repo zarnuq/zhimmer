@@ -18,6 +18,7 @@ typeset -gA ZHIMMER_DEFAULTS=(
   history-halflife  10   # in matches: a run that far back is worth half a fresh one
   prompt            no
   prompt-async      yes
+  theme-file        ''   # zsh that overrides the colour tables; see the plugin file
 )
 # The array setting's default, beside the scalars.
 typeset -ga ZHIMMER_DEFAULT_SOURCES=( history alias command )

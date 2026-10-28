@@ -385,6 +385,17 @@ ZHIMMER_SELECT_BG='#45475a'            # the selected row's bar
 Defaults are Catppuccin Mocha, picked to match the prompt colours in the
 author's `.zshrc`.
 
+To swap the whole palette (a theme switcher, say), point `theme-file` at a zsh
+file of such assignments. It is sourced while the plugin loads — after the
+tables exist, before the Tab styling and the prompt read them — so it can also
+change `ZHIMMER_SELECT_BG` (then call `_zhimmer_select_from_bg`) and
+`ZHIMMER_PROMPT_COLORS`, which a line in `.zshrc` after the plugin loads cannot
+reach. New shells only.
+
+```zsh
+zstyle ':zhimmer:*' theme-file ~/.local/state/theme/zhimmer.zsh
+```
+
 Row text carries one accent: the first token — the command in a history line,
 the name of an alias, the branch or host or target a source is about — in that
 source's colour. Arguments stay plain, which keeps a row scannable and keeps

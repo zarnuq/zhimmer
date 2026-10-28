@@ -17,6 +17,13 @@ for _zhimmer_f in $ZHIMMER_DIR/lib/*.zsh(N) $ZHIMMER_DIR/sources/*.zsh(N); do
   source $_zhimmer_f
 done
 
+# A colour override file, sourced once the tables exist and before anything
+# reads them (the Tab styling below, the prompt). It assigns into the tables in
+# lib/theme.zsh and lib/prompt.zsh; it is plain zsh, so a theme switcher can
+# write one. Only new shells see a change.
+_zhimmer_cfg theme-file
+[[ -n $REPLY && -r ${~REPLY} ]] && source ${~REPLY}
+
 zle -C zhimmer-show list-choices .zhimmer-complete
 
 for _zhimmer_f in toggle search step-back down up magic-space; do
