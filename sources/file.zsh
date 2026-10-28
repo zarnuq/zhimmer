@@ -17,7 +17,9 @@ _zhimmer_source_file() {
   # absent (`**` is recursive descent). A word that is not a valid pattern
   # (`http://[IP`) comes back unexpanded under NO_BAD_PATTERN, and is retried
   # as a literal.
-  setopt localoptions nobadpattern
+  # NO_EQUALS: a leading `=` (`emerge =cat/pkg-1.0`) is otherwise a command
+  # lookup, and a miss is a hard "not found" error at the prompt.
+  setopt localoptions nobadpattern noequals
   local word=${home}${PREFIX:${#tilde}} pat
   [[ $word == *\* ]] && pat=$word || pat=$word\*
   local -a m=( ${~pat}(N) )

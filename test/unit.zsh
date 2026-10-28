@@ -558,6 +558,10 @@ _drew=(); CURRENT=2 PREFIX=$_fdir/'f['; _zhimmer_source_file 10
 is "an unclosed [ in a path matches literally" "${(j:|:)_drew}" "zhimmer-file|file|$_fdir/f[x"
 _drew=(); CURRENT=2 PREFIX=$_fdir/'f*'; _zhimmer_source_file 10
 is "a glob in a path still globs" "${(j:|:)_drew}" "zhimmer-file|file|$_fdir/f[x|$_fdir/fy"
+# A leading `=` is EQUALS command lookup: `emerge =dev-java/pkg` printed
+# `not found` on every keystroke.
+_err=$(CURRENT=2 PREFIX="=$_fdir/nope"; _zhimmer_source_file 10 2>&1)
+is "a leading = is not a command lookup" "$_err" ""
 rm -rf $_fdir
 _zhimmer_addwords() { typeset -g _zhimmer_drawn=$2 }
 

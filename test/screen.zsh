@@ -372,6 +372,16 @@ send BSpace
 checks "backspace hands the area back to zhimmer's own list" ' file '
 stop
 
+# Tab cleared the drop-down without a redraw, so complist sized a list that had
+# to scroll by a screen still holding our rows: header and prompt scrolled off,
+# rows repeated down the screen.
+start 60 14
+send "ls ./zmany/f"
+send Tab
+send Down Down
+checks "a scrolling Tab list after the drop-down keeps its header" ' files ─'
+stop
+
 # A short list fits on screen, which is not the same as having nothing to choose
 # from: it gets selection too, so the row Tab is on is marked rather than
 # guessed at from the line.

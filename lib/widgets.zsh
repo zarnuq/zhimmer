@@ -170,7 +170,12 @@ typeset -ga ZHIMMER_COMPLETE_WIDGETS=(
 )
 
 _zhimmer_after_complete() {  # <saved-widget>
+  local drawn=$POSTDISPLAY
   _zhimmer_zle_clear
+  # complist places and scrolls its list by the height of the last redraw. With
+  # our rows still counted in it, a list that had to scroll was drawn off by
+  # their height: the prompt overwritten, rows repeated down the screen.
+  [[ -n $drawn ]] && zle -R
   _zhimmer_style_matches
   { zle $1 } always { _zhimmer_unstyle_matches }
   (( ${_lastcomp[nmatches]:-0} == 1 )) && _zhimmer_maybe_show
