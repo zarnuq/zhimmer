@@ -19,6 +19,7 @@ _zhimmer_offer_ghost() {  # <source-name> <whole-line candidate>
 _zhimmer_ghost_guard() {
   [[ ( -n $POSTDISPLAY || -n $_zhimmer_zprefix ) && $BUFFER != $_zhimmer_shown_for ]] &&
     _zhimmer_zle_clear
+  _zhimmer_trap_sync
   return 0
 }
 
@@ -51,6 +52,7 @@ _zhimmer_accept_ghost() {  # [<widget to move by>]
 _zhimmer_line_reset() {
   _zhimmer_search=0 _zhimmer_above=0
   _zhimmer_zle_clear
+  _zhimmer_trap_sync
   return 0
 }
 
@@ -62,4 +64,37 @@ _zhimmer_trapint() {
   zle && zle _zhimmer_line_reset && zle -R
   (( $+functions[_zhimmer_orig_trapint] )) && { _zhimmer_orig_trapint "$@"; return }
   return $(( 128 + $1 ))
+}
+
+# TRAPINT is ours only while something of ours is drawn. Any TRAPINT -- even one
+# returning the default status -- changes how Ctrl+C lands in complist's list
+# pager ("Tab for more"): the line was not aborted and the next key typed
+# vanished, so the terminal read as wedged. The pager draws at refresh, after
+# Tab's widget has returned and cleared our rows, so this runs from the redraw
+# hook, and from line-finish, which clears without a redraw after it.
+#
+# A flag, not a look at $functions[TRAPINT]: that decompiles the body on every
+# redraw, and a wrapper around ours would not read as ours. A TRAPINT there
+# when ours goes in is put back when it comes out. A list-style `trap ... INT`
+# is not: zsh empties traps inside $( ), so reading one takes a temp file.
+typeset -gi _zhimmer_trap_on=0
+
+_zhimmer_trap_sync() {
+  local -i want=0
+  (( $#_zhimmer_zrow )) || [[ -n $_zhimmer_zghost$_zhimmer_zprefix ]] && want=1
+  (( want == _zhimmer_trap_on )) && return 0
+  _zhimmer_trap_on=$want
+  # Under LOCAL_TRAPS (emulate -L sets it) a trap set here is undone on return.
+  setopt localoptions nolocaltraps
+  if (( want )); then
+    unfunction _zhimmer_orig_trapint 2>/dev/null
+    (( $+functions[TRAPINT] )) && functions[_zhimmer_orig_trapint]=$functions[TRAPINT]
+    TRAPINT() { _zhimmer_trapint "$@"; return }  # an explicit return: a bare status does not abort the line
+  elif (( $+functions[_zhimmer_orig_trapint] )); then
+    functions[TRAPINT]=$functions[_zhimmer_orig_trapint]
+    unfunction _zhimmer_orig_trapint
+  else
+    unfunction TRAPINT 2>/dev/null
+  fi
+  return 0
 }

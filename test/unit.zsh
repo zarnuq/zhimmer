@@ -899,6 +899,22 @@ _zhimmer_wrap_builtin _zhimmer_accept_with zt-user forward-char
 is   "builtin wrapping skips a user widget"       "${widgets[zt-user]}"           "user:_zt_other"
 is   "and wraps a builtin, calling .name below"   "${functions[.zhimmer-wrap-forward-char]//[[:space:]]/}" "_zhimmer_accept_with.forward-char"
 
+print "\n-- TRAPINT only while something is drawn --"
+# Ours in the Tab pager swallowed the key after Ctrl+C; whatever was there
+# before has to come back when ours goes.
+_zt_trap() { print -rn -- "${(j:|:)${(@)${(f)functions[TRAPINT]}//[[:space:]]/}}" }
+TRAPINT() { print user }
+_zhimmer_zrow=( x ); _zhimmer_trap_sync
+is   "drawn rows install ours"                    "$(_zt_trap)"  '_zhimmer_trapint"$@"|return'
+_zhimmer_trap_sync
+is   "a second sync with no change is a no-op"     "$(_zt_trap)"  '_zhimmer_trapint"$@"|return'
+_zhimmer_zrow=(); _zhimmer_trap_sync
+is   "cleared rows put the user's back"           "$(_zt_trap)"  'printuser'
+is   "and drop the saved copy"                    "${+functions[_zhimmer_orig_trapint]}" "0"
+unfunction TRAPINT
+_zhimmer_zghost=x; _zhimmer_trap_sync; _zhimmer_zghost=; _zhimmer_trap_sync
+is   "with none before, none after"               "${+functions[TRAPINT]}" "0"
+
 print
 if (( fails )); then
   finished=1

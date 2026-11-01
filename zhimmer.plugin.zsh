@@ -45,8 +45,6 @@ add-zle-hook-widget line-pre-redraw _zhimmer_ghost_guard
 zle -N _zhimmer_line_reset
 add-zle-hook-widget line-finish _zhimmer_line_reset
 add-zle-hook-widget line-init   _zhimmer_line_reset
-(( $+functions[TRAPINT] )) && functions[_zhimmer_orig_trapint]=$functions[TRAPINT]
-TRAPINT() { _zhimmer_trapint "$@"; return }  # an explicit return: a bare status does not abort the line
 
 # Idempotent: every wrapper it calls has its own guard.
 _zhimmer_bindkeys() {
